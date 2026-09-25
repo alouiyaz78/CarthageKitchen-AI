@@ -1,198 +1,133 @@
-import json
 import os
 import base64
-import requests
-from langchain.tools import tool
-from PIL import Image
-from ibm_watsonx_ai import Credentials, APIClient
-from ibm_watsonx_ai.foundation_models import ModelInference
-from io import BytesIO
-from typing import List, Optional
-import logging
-logging.basicConfig(level=logging.INFO)
-
-logging.info("Extracting ingredients from image...")
-
-credentials = Credentials(
-                   url = "https://us-south.ml.cloud.ibm.com",
-                   # api_key = "<YOUR_API_KEY>" # Normally you'd put an API key here, but we've got you covered here
-                  )
-client = APIClient(credentials)
-project_id = "skills-network"
+from typing import List, Union
+from crewai.tools import tool
+from litellm import completion
 
 
-class ExtractIngredientsTool():
-    @tool("Extract ingredients")
-    def extract_ingredient(image_input: str):
-        """
-        Extract ingredients from a food item image.
-        
-        :param image_input: The image file path (local) or URL (remote).
-        :return: A list of ingredients extracted from the image.
-        """
-        if image_input.startswith("http"):  # Check if input is a URL
-            # Download the image from the URL
-            response = requests.get(image_input)
-            response.raise_for_status()
-            image_bytes = BytesIO(response.content)
-        else:
-            # Open the local image file in binary mode
-            if not os.path.isfile(image_input):
-                raise FileNotFoundError(f"No file found at path: {image_input}")
-            with open(image_input, "rb") as file:
-                image_bytes = BytesIO(file.read())
+def encode_image_to_base64(path: str) -> str:
+    """Lit un fichier image et le convertit en chaîne Base64."""
+    with open(path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
 
-        # Encode the image to a base64 string
-        encoded_image = base64.b64encode(image_bytes.read()).decode("utf-8")
 
-        # Call the model with the encoded image
-        model = ModelInference(
-            model_id="meta-llama/llama-3-2-90b-vision-instruct",
-            credentials=credentials,
-            project_id=project_id,
-            params={"max_tokens": 300},
+@tool("extract_ingredients_from_image_and_text")
+def extract_ingredients_from_image_and_text(
+    image_input: str = "None", 
+    manual_input: str = "None"
+) -> str:
+    """
+    Extrait et fusionne les ingrédients visibles sur une ou plusieurs images 
+    avec les ingrédients saisis manuellement au format texte.
+    """
+    content = []
+
+    # 1. Traitement des images (une seule ou liste délimitée par des virgules)
+    if image_input and image_input not in ["None", "null", ""]:
+        # Gestion multi-chemins
+        raw_paths = [p.strip() for p in image_input.split(",") if p.strip()]
+        valid_paths = [p for p in raw_paths if os.path.exists(p)]
+
+        for path in valid_paths:
+            try:
+                b64_img = encode_image_to_base64(path)
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                })
+            except Exception as e:
+                continue
+
+        if valid_paths:
+            content.append({
+                "type": "text",
+                "text": (
+                    "Identifie avec précision tous les ingrédients comestibles, légumes, fruits, "
+                    "protéines, condiments, boîtes de conserve et épices visibles sur ces photographies. "
+                    "Renvoie uniquement la liste de ces ingrédients séparés par des virgules."
+                )
+            })
+
+    # 2. Traitement du texte manuel additionnel
+    if manual_input and manual_input not in ["None", "null", ""]:
+        content.append({
+            "type": "text",
+            "text": f"Prends également en compte ces ingrédients saisis manuellement : {manual_input}"
+        })
+
+    if not content:
+        return "Aucun ingrédient détecté ni renseigné."
+
+    # Appel au modèle de vision via LiteLLM
+    vision_model = os.getenv("VISION_MODEL", "claude-3-5-sonnet-latest")
+    clean_model = vision_model.replace("anthropic/", "")
+    litellm_model = f"anthropic/{clean_model}"
+
+    try:
+        response = completion(
+            model=litellm_model,
+            messages=[{"role": "user", "content": content}],
+            api_key=os.getenv("ANTHROPIC_API_KEY")
         )
-        response = model.chat(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract ingredients from the food item image"},
-                        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + encoded_image}}
-                    ],
-                }
-            ]
-        )
-
-        return response['choices'][0]['message']['content']
+        return response.choices[0].message.content
+    except Exception as err:
+        return f"Erreur lors de la détection visuelle : {str(err)}"
 
 
-class FilterIngredientsTool:
-    @tool("Filter ingredients")
-    def filter_ingredients(raw_ingredients: str) -> List[str]:
-        """
-        Processes the raw ingredient data and filters out non-food items or noise.
-        
-        :param raw_ingredients: Raw ingredients as a string.
-        :return: A list of cleaned and relevant ingredients.
-        """
-        # Example implementation: parse the raw ingredients string into a list
-        # This can be enhanced with more sophisticated parsing as needed
-        ingredients = [ingredient.strip().lower() for ingredient in raw_ingredients.split(',') if ingredient.strip()]
-        return ingredients
-
-class DietaryFilterTool:
-    @tool("Filter based on dietary restrictions")
-    def filter_based_on_restrictions(ingredients: List[str], dietary_restrictions: Optional[str] = None) -> List[str]:
-        """
-        Uses an LLM model to filter ingredients based on dietary restrictions.
-
-        :param ingredients: List of ingredients.
-        :param dietary_restrictions: Dietary restrictions (e.g., vegan, gluten-free). Defaults to None.
-        :return: Filtered list of ingredients that comply with the dietary restrictions.
-        """
-        # If no dietary restrictions are provided, return the original ingredients
-        if not dietary_restrictions:
-            return ingredients
-
-        # Initialize the WatsonX model
-        model = ModelInference(
-            model_id="ibm/granite-4-h-small",
-            credentials=credentials,
-            project_id=project_id,
-            params={"max_tokens": 150},
-        )
-
-        # Create a prompt for the LLM to filter ingredients
-        prompt = f"""
-        You are an AI nutritionist specialized in dietary restrictions. 
-        Given the following list of ingredients: {', '.join(ingredients)}, 
-        and the dietary restriction: {dietary_restrictions}, 
-        remove any ingredient that does not comply with this restriction. 
-        Return only the compliant ingredients as a comma-separated list with no additional commentary.
-        """
-
-        # Send the prompt to the model for filtering
-        response = model.chat(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt}
-                    ],
-                }
-            ]
-        )
-
-        # Parse the response to return the filtered list
-        filtered = response['choices'][0]['message']['content'].strip().lower()
-        filtered_list = [item.strip() for item in filtered.split(',') if item.strip()]
-        return filtered_list
-
+@tool("filter_ingredients_list")
+def filter_ingredients_list(raw_ingredients: str) -> List[str]:
+    """
+    Nettoie, standardise et dé-duplique une chaîne d'ingrédients bruts 
+    pour renvoyer une liste Python propre.
+    """
+    if not raw_ingredients or raw_ingredients in ["None", "null"]:
+        return []
     
-class NutrientAnalysisTool():
-    @tool("Analyze nutritional values and calories of the dish from uploaded image")
-    def analyze_image(image_input: str):
-        """
-        Provide a detailed nutrient breakdown and estimate the total calories of all ingredients from the uploaded image.
+    # Nettoyage des puces Markdown et retours à la ligne
+    cleaned = raw_ingredients.replace("\n", ",").replace("-", ",").replace("*", "")
+    items = [item.strip().lower() for item in cleaned.split(",") if item.strip()]
+    
+    # Déduplication en préservant l'ordre
+    unique_items = list(dict.fromkeys(items))
+    return unique_items
+
+
+@tool("filter_based_on_dietary_restrictions")
+def filter_based_on_dietary_restrictions(
+    ingredients: Union[List[str], str], 
+    dietary_restrictions: str = "None"
+) -> List[str]:
+    """
+    Filtre les ingrédients selon les intolérances et régimes spécifiés.
+    """
+    if isinstance(ingredients, str):
+        ing_list = [i.strip().lower() for i in ingredients.split(",") if i.strip()]
+    else:
+        ing_list = [str(i).strip().lower() for i in ingredients]
+
+    if not dietary_restrictions or dietary_restrictions.lower() in ["none", "standard", ""]:
+        return ing_list
+
+    restrictions_lower = dietary_restrictions.lower()
+    filtered = []
+
+    # Mots-clés d'exclusion courante
+    gluten_items = ["couscous", "farine", "pain", "pâtes", "semoule", "orzo", "frik", "malsouka", "brik"]
+    meat_items = ["viande", "foie", "poulet", "boeuf", "agneau", "merguez", "veau", "thon", "poisson", "crevette"]
+    animal_items = meat_items + ["oeuf", "oeufs", "lait", "fromage", "beurre"]
+
+    for item in ing_list:
+        exclude = False
+        if "gluten" in restrictions_lower and any(g in item for g in gluten_items):
+            exclude = True
+        if "végétarien" in restrictions_lower or "vegetarian" in restrictions_lower:
+            if any(m in item for m in meat_items):
+                exclude = True
+        if "vegan" in restrictions_lower:
+            if any(a in item for a in animal_items):
+                exclude = True
         
-        :param image_input: The image file path (local) or URL (remote).
-        :return: A string with nutrient breakdown (protein, carbs, fat, etc.) and estimated calorie information.
-        """
-        if image_input.startswith("http"):  # Check if input is a URL
-            # Download the image from the URL
-            response = requests.get(image_input)
-            response.raise_for_status()
-            image_bytes = BytesIO(response.content)
-        else:
-            # Open the local image file in binary mode
-            if not os.path.isfile(image_input):
-                raise FileNotFoundError(f"No file found at path: {image_input}")
-            with open(image_input, "rb") as file:
-                image_bytes = BytesIO(file.read())
+        if not exclude:
+            filtered.append(item)
 
-        # Encode the image to a base64 string
-        encoded_image = base64.b64encode(image_bytes.read()).decode("utf-8")
-
-        # Call the model with the encoded image
-        model = ModelInference(
-            model_id="meta-llama/llama-3-2-90b-vision-instruct",
-            credentials=credentials,
-            project_id=project_id,
-            params={"max_tokens": 300},
-        )
-        # Assistant prompt (can be customized)
-        assistant_prompt = """
-            You are an expert nutritionist. Your task is to analyze the food items displayed in the image and provide a detailed nutritional assessment using the following format:
-        1. **Identification**: List each identified food item clearly, one per line.
-        2. **Portion Size & Calorie Estimation**: For each identified food item, specify the portion size and provide an estimated number of calories. Use bullet points with the following structure:
-        - **[Food Item]**: [Portion Size], [Number of Calories] calories
-        Example:
-        *   **Salmon**: 6 ounces, 210 calories
-        *   **Asparagus**: 3 spears, 25 calories
-        3. **Total Calories**: Provide the total number of calories for all food items.
-        Example:
-        Total Calories: [Number of Calories]
-        4. **Nutrient Breakdown**: Include a breakdown of key nutrients such as **Protein**, **Carbohydrates**, **Fats**, **Vitamins**, and **Minerals**. Use bullet points, and for each nutrient provide details about the contribution of each food item.
-        Example:
-        *   **Protein**: Salmon (35g), Asparagus (3g), Tomatoes (1g) = [Total Protein]
-        5. **Health Evaluation**: Evaluate the healthiness of the meal in one paragraph.
-        6. **Disclaimer**: Include the following exact text as a disclaimer:
-        The nutritional information and calorie estimates provided are approximate and are based on general food data. 
-        Actual values may vary depending on factors such as portion size, specific ingredients, preparation methods, and individual variations. 
-        For precise dietary advice or medical guidance, consult a qualified nutritionist or healthcare provider.
-        Format your response exactly like the template above to ensure consistency.
-        """
-        response = model.chat(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": assistant_prompt},
-                        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + encoded_image}}
-                    ],
-                }
-            ]
-        )
-
-        return response['choices'][0]['message']['content']
+    return filtered
