@@ -5,3 +5,10 @@ venv/
 *.pyc
 *.pyo
 .gradio/
+
+.env
+src/.env
+Doc/recipes_json_cache/
+Doc/extracted_text/
+__pycache__/
+*.pyc

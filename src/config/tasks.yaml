@@ -1,65 +1,53 @@
-ingredient_detection_task:
+detect_ingredients_task:
   description: >
-    Analyze the available input channels:
-    - Uploaded image file path(s) or comma-separated list: {uploaded_image}
-    - Manually entered ingredient text: {manual_ingredients}
-    
-    1. If image paths are provided, process all images to extract raw ingredients, produce, proteins, and pantry staples.
-    2. If manual text is provided, parse and standardize the listed ingredients.
-    3. Seamlessly merge and de-duplicate all sources into a single coherent inventory.
-    4. If neither contains usable food items, return a clear warning indicating no ingredients were detected.
+    Analyze the uploaded pantry images ({image_paths}) and manual input notes ({manual_input}).
+    Use the vision and extraction tools to detect all food items, vegetables, spices, meats, and condiments.
+    Produce a clean, de-duplicated list of available ingredients.
+  expected_output: >
+    A comprehensive, de-duplicated comma-separated list of identified ingredients.
   agent: ingredient_detection_agent
-  expected_output: >
-    A clean, de-duplicated, comma-separated list of all available food ingredients.
 
-dietary_filtering_task:
+filter_dietary_task:
   description: >
-    Review the consolidated ingredient inventory against the specified dietary restrictions: {dietary_restrictions}.
-    - If {dietary_restrictions} is empty, 'None', or 'standard', output the original list unchanged.
-    - If specific constraints exist (e.g., gluten-free, vegan, diabetic-friendly, low-sodium), 
-      eliminate non-compliant items in a single deterministic pass.
+    Review the detected ingredients list against user dietary restrictions: {dietary_restrictions}.
+    Filter out non-compliant items (e.g., gluten sources like semolina/couscous/malsouka/frik if gluten-free; meats if vegetarian/vegan).
+    Flag high-sodium or problematic items if relevant.
+  expected_output: >
+    A validated list of compliant ingredients available for recipe preparation, noting any excluded ingredients.
   agent: dietary_filtering_agent
-  expected_output: >
-    A verified list of compliant ingredients meeting the user's dietary parameters.
 
-nutrient_analysis_task:
+suggest_heritage_recipe_task:
   description: >
-    Conduct a detailed nutritional assessment based on the available ingredients and planned dish:
-    1. Estimate individual portions for each core ingredient.
-    2. Estimate total calories (accounting for cooking fats, particularly olive oil).
-    3. Calculate macronutrient distribution (Proteins, Carbohydrates, Fats in grams) and key micronutrients (Fiber, Sodium).
-    4. Provide a 1-paragraph metabolic evaluation highlighting glycemic impact, heart health, and practical optimization tips.
-  agent: nutrient_analysis_agent
+    Take the compliant ingredients list and user preferences ({meal_preference}).
+    Use the `search_tunisian_recipes_tool` to query the historical database of authentic Tunisian recipes.
+    Select the best-matching heritage dish and structure the recipe strictly adhering to tradition:
+    - Retain authentic vernacular names (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji).
+    - Detail step-by-step authentic techniques (techwih, couscoussier steaming, spices balance).
+    - Clearly separate the available pantry ingredients from necessary 'Add-ons' to achieve culinary authenticity.
   expected_output: >
-    A structured nutritional report containing itemized portions, calorie totals, macro breakdown, and a metabolic health summary.
-
-recipe_suggestion_task:
-  description: >
-    Craft 1 to 2 authentic Tunisian recipes using the compliant ingredients.
-    Enforce these strict culinary rules:
-    1. Authenticity & Canon: Respect traditional dish structures. NEVER invent non-traditional fusions
-       just to use up items (e.g., NEVER serve Kafteji, Ojja, or Chakchouka over couscous; NEVER mix pasta with couscous).
-    2. Selective Ingredient Use: You are NOT required to use every single provided ingredient in one recipe. 
-       If couscous and Kafteji vegetables are both present, propose an authentic 'Kousksi bel Khodhra' OR 
-       propose an authentic oven-roasted Kafteji served with crusty bread, leaving the unused couscous in the pantry.
-    3. Elevated Protein Add-ons: For vegetable-forward dishes, you are encouraged to propose authentic protein variations, 
-       such as Kafteji bel Kebda (with sautéed calf/lamb liver), Ojja with merguez, or baked eggs.
-    4. Missing Items Flagging: Place any missing protein or traditional seasoning (e.g., "fresh calf liver (300g)", 
-       "tabel-karouia", "harissa arbi") into 'missing_items_to_grab' so the Sourcing Agent can locate them.
+    A complete authentic Tunisian recipe including dish name, heritage context, ingredients list (with required add-ons), 
+    and detailed instructions based on the retrieved historical literature.
   agent: recipe_suggestion_agent
-  expected_output: >
-    Detailed Tunisian recipe cards structured with title, description, prep/cook times, base ingredients, 
-    assumed pantry staples, missing items to grab, step-by-step instructions, and chef tips.
 
-ingredient_sourcing_task:
+source_ingredients_task:
   description: >
-    Analyze the 'missing_items_to_grab' from the suggested recipes.
-    For each item, especially specialty spices, harissa arbi, and fresh halal meats/offal (like calf liver for Kafteji):
-    1. Supermarket Alternative: Provide immediate alternatives from mainstream Canadian chains (Maxi, Super C, Metro, Loblaws, IGA, Bulk Barn).
-    2. Local Specialty Markets in {target_city}:
-       - If Ottawa / Gatineau: Recommend Jasmine Market (prime for Tunisian imports), North-Af Market (Algerian & Tunisian products), 
-         Mid-East Food Centre (St-Laurent Blvd), and Marché Adonis.
-       - If Montreal: Recommend Épicerie Berbère (Rue Jean-Talon Est), Boucherie Atlas, Marché Jean-Talon, Sami Fruits, and Adonis.
-  agent: ingredient_sourcing_agent
+    Review all ingredients and add-ons required by the suggested recipe.
+    For city: {target_city} (e.g., Ottawa/Gatineau or Montreal), identify items requiring special sourcing 
+    (tabel, harissa arbi, semoule grain moyen, fresh seafood, specific cuts of lamb or beef).
+    Provide exact specialty grocers (e.g., Jasmine Market, Mid-East Food Centre, Marché Adonis) and immediate supermarket equivalents.
   expected_output: >
-    A practical, localized Canadian grocery sourcing guide organized by recipe and location.
+    A practical grocery guide detailing:
+    1. Everyday supermarket substitutes (available at Metro, Loblaws, Maxi).
+    2. Exact specialty ethnic markets in {target_city} with store names and recommended products.
+  agent: ingredient_sourcing_agent
+
+analyze_nutrition_task:
+  description: >
+    Analyze the final recipe provided by the chef.
+    Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
+    Account for cooking techniques (olive oil usage, taghmis dipping habits).
+    Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
+  expected_output: >
+    A structured nutritional diagnostic panel detailing macros, estimated calories per serving, 
+    and practical advice for metabolic balance and glycemic control.
+  agent: nutrient_analysis_agent
