@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CarthageKitchen AI (repo/package name: NourishBot) is a Gradio app, also deployed as a Hugging Face Space (see the README front-matter). It uses a CrewAI multi-agent pipeline to turn pantry photos or typed ingredients into authentic Tunisian recipes. It also produces a local grocery sourcing guide (Ottawa/Gatineau, Montreal) and a nutrition analysis. Recipe suggestions draw on a RAG store built from scanned Tunisian cookbooks.
+CarthageKitchen AI (repo/package name: NourishBot) is a Gradio app. The README front-matter is set up for a Hugging Face Space, but the project is still in testing and has not been deployed yet. It uses a CrewAI multi-agent pipeline to turn pantry photos or typed ingredients into authentic Tunisian recipes. It also produces a local grocery sourcing guide (Ottawa/Gatineau, Montreal) and a nutrition analysis. Recipe suggestions draw on a RAG store built from scanned Tunisian cookbooks.
 
 ## Commands
 
@@ -60,7 +60,7 @@ The scripts read the cookbook PDFs in `Doc/` (gitignored) and fill `tunisian_rec
 
 The theme is defined in `app.py`: a custom `gr.themes.Soft` (Sidi Bou Saïd palette), a `css` string, and a Google Font loaded through `head` (Gradio 6 drops `@import` rules in `css`). The output tabs get their accent colors from their `elem_id`s: Gradio renders each tab button as `#<elem_id>-button`, and the CSS styles those ids. Keep the ids `ck-tab-recipe`, `ck-tab-shopping`, `ck-tab-nutrition` and `ck-output-tabs` stable.
 
-The background mosaic and the hero photos come from `assets/ui/`. They are served with `gr.set_static_paths`, which lists the individual files (`MOSAIC_FILE`, `VIGNETTES`) rather than the whole directory, so other files there stay private. To add an image, add it to those lists; the URL is built by `ui_asset_url()` as `/gradio_api/file=<absolute path>`. Missing files are skipped. `assets/` must be committed for the images to show up on the HF Space.
+The background mosaic and the hero photos come from `assets/ui/`. They are served with `gr.set_static_paths`, which lists the individual files (`MOSAIC_FILE`, `VIGNETTES`) rather than the whole directory, so other files there stay private. To add an image, add it to those lists; the URL is built by `ui_asset_url()` as `/gradio_api/file=<absolute path>`. Missing files are skipped. `assets/ui/` must be committed for the images to show up once the app is deployed.
 
 ## Conventions
 
