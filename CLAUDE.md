@@ -25,6 +25,7 @@ ruff check .                  # ruff is pinned in requirements.txt
 The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls back to the root `.env`. `src/tools.py`, `app.py`, and the ingestion scripts only read the root `.env`.
 
 - `ANTHROPIC_API_KEY`: required. `src/crew.py` raises an error at import time if it is missing.
+- `SERPER_API_KEY`: optional. Enables web search (crewai-tools `SerperDevTool`) for the modern chef recipe styles. Without it, those styles fall back to the classic recipe with a notice.
 - `DATABASE_URL`: Neon Postgres with pgvector. Without it, the dish dropdown shows only "Auto-detect" and the RAG tool returns an error string.
 - `VISION_MODEL`: optional. Sets the model used for image ingredient extraction in `src/tools.py`.
 - `MODEL_NAME` appears in the README but is **ignored**. The crew LLM is hardcoded in `src/crew.py` (`anthropic/claude-haiku-4-5-20251001`, temperature 0.2).
@@ -36,9 +37,11 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 - `NourishBotAnalysisCrew`: `detect_ingredients_task` (only with photos), then `analyze_meal_task`.
 - Agent and crew logs are off; set `CREW_VERBOSE=1` to turn them on.
 
-**Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `heritage_recipe`, `has_pantry` (`yes`/`no`: did the user give photos or ingredients), `meal_preference`, `dietary_restrictions`, `target_city`, `language` (`English` or `French`, from the UI language switch). If you add a placeholder, you must add the matching key in `app.py`, otherwise CrewAI raises a KeyError. Empty inputs are passed as the string `"None"`.
+**Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `heritage_recipe`, `has_pantry` (`yes`/`no`: did the user give photos or ingredients), `meal_preference`, `dietary_restrictions`, `target_city`, `language` (`English` or `French`, from the UI language switch), `recipe_style` (`classic`, `chefs_variants` or `comparison`). If you add a placeholder, you must add the matching key in `app.py`, otherwise CrewAI raises a KeyError. Empty inputs are passed as the string `"None"`.
 
 **Selected dish.** When the user picks a dish, `app.py` fetches it by exact name with `get_recipe_by_name()` (`src/tools.py`) and passes it as `heritage_recipe`. The chef task is told to cook exactly that dish from that reference instead of running the semantic search.
+
+**Recipe style.** In `classic` style the chef only has the Neon RAG tool. In `chefs_variants` and `comparison` it also gets `SerperDevTool` (5 results, 2 searches at most), and the recipe task makes the search mandatory. Serper only returns titles and short snippets, so chef-specific details are often missing, and the model tends to fill the gap with generic claims attributed to the chef.
 
 **UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `NUTRITION_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`. It also strips emoji from the LLM output.
 
@@ -63,6 +66,8 @@ The scripts read the cookbook PDFs in `Doc/` (gitignored) and fill `tunisian_rec
 ## UI theme
 
 The theme is defined in `app.py`: a custom `gr.themes.Soft` (Sidi Bou Saïd palette), a `css` string, and a Google Font loaded through `head` (Gradio 6 drops `@import` rules in `css`). The output tabs get their accent colors from their `elem_id`s: Gradio renders each tab button as `#<elem_id>-button`, and the CSS styles those ids. Keep the ids `ck-tab-recipe`, `ck-tab-shopping`, `ck-tab-nutrition` and `ck-output-tabs` stable.
+
+The recipe and shopping tabs each have a print button (`print_js()`). It copies the box content into a `#ck-print-sheet` div, and `PRINT_CSS` hides the rest of the page while printing. `PRINT_CSS` is injected through `head`, not `css`, because Gradio prefixes every selector in `css` (including inside `@media`) with its container class, so rules on `body` never match. The Markdown ids `ck-recipe-md` and `ck-shopping-md` must stay stable.
 
 The background mosaic and the hero photos come from `assets/ui/`. They are served with `gr.set_static_paths`, which lists the individual files (`MOSAIC_FILE`, `VIGNETTES`) rather than the whole directory, so other files there stay private. To add an image, add it to those lists; the URL is built by `ui_asset_url()` as `/gradio_api/file=<absolute path>`. Missing files are skipped. `assets/ui/` must be committed for the images to show up once the app is deployed.
 

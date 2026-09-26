@@ -3,6 +3,7 @@
 
 # App
 crewai==1.15.22
+crewai-tools==1.15.22
 gradio==6.28.0
 litellm==1.53.3
 pydantic==2.12.5

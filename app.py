@@ -7,10 +7,13 @@ from dotenv import load_dotenv
 import gradio as gr
 import psycopg2
 from src.crew import (
+    CLASSIC_STYLE,
     MEAL_ANALYSIS_TASK,
     NUTRITION_TASK,
+    RECIPE_STYLES,
     RECIPE_TASK,
     SOURCING_TASK,
+    WEB_SEARCH_AVAILABLE,
     NourishBotAnalysisCrew,
     NourishBotRecipeCrew,
 )
@@ -82,6 +85,16 @@ UI_TEXT = {
         "dish_header": "#### Heritage Recipe Choice",
         "dish_label": "Heritage recipes ({count} dishes)",
         "auto_detect": "Auto-detect / Recipe from my ingredients",
+        "style_label": "Recipe style",
+        "style_choices": [
+            "Classic Heritage (Books & Neon RAG)",
+            "Modern Chefs & Creators (Web Search: Taysir, Hindati...)",
+            "Heritage vs Modern Comparison",
+        ],
+        "msg_web_unavailable": (
+            "*Web search is not configured (SERPER_API_KEY missing), so this"
+            " is the classic heritage recipe.*"
+        ),
         "cravings_label": "Cravings or variations (optional)",
         "cravings_placeholder": "e.g. fish dish, spicy, family-style...",
         "diet_header": "#### Dietary Preferences & Health",
@@ -104,6 +117,8 @@ UI_TEXT = {
         "out_recipe": "1. In the Kitchen",
         "out_shopping": "2. Grocery & Markets",
         "out_nutrition": "3. Nutrition",
+        "print_recipe": "Print recipe",
+        "print_shopping": "Print shopping list",
         "ph_recipe": (
             "Your recipe will appear here.",
             "Step-by-step instructions and traditional techniques.",
@@ -145,6 +160,16 @@ UI_TEXT = {
         "dish_header": "#### Choix d'une recette du patrimoine",
         "dish_label": "Recettes patrimoniales ({count} plats)",
         "auto_detect": "Détection auto / Recette selon mes ingrédients",
+        "style_label": "Style de recette",
+        "style_choices": [
+            "Patrimoine classique (livres et base Neon)",
+            "Chefs et créateurs modernes (recherche web : Taysir, Hindati...)",
+            "Comparaison patrimoine / moderne",
+        ],
+        "msg_web_unavailable": (
+            "*La recherche web n'est pas configurée (SERPER_API_KEY absente) :"
+            " voici la recette patrimoniale classique.*"
+        ),
         "cravings_label": "Envies ou variantes (optionnel)",
         "cravings_placeholder": "Ex : plat au poisson, bien piquant, familial...",
         "diet_header": "#### Préférences et restrictions santé",
@@ -167,6 +192,8 @@ UI_TEXT = {
         "out_recipe": "1. En cuisine",
         "out_shopping": "2. Épicerie et marchés",
         "out_nutrition": "3. Nutrition",
+        "print_recipe": "Imprimer la recette",
+        "print_shopping": "Imprimer la liste de courses",
         "ph_recipe": (
             "La fiche recette détaillée s'affichera ici.",
             "Instructions pas à pas et techniques traditionnelles.",
@@ -258,10 +285,16 @@ def run_pipeline(
     dietary_custom,
     target_city,
     workflow_type,
+    recipe_style,
     language,
     progress=gr.Progress(track_tqdm=True),
 ):
   t = ui_text(language)
+  # Without a Serper key the web styles cannot work: fall back to classic and
+  # say so above the recipe.
+  web_fallback = recipe_style != CLASSIC_STYLE and not WEB_SEARCH_AVAILABLE
+  if web_fallback:
+    recipe_style = CLASSIC_STYLE
   has_images = bool(image_files and len(image_files) > 0)
   has_text = bool(manual_text and manual_text.strip())
   has_dish = bool(selected_dish) and selected_dish != AUTO_DETECT
@@ -294,14 +327,26 @@ def run_pipeline(
       "dietary_restrictions": dietary_restrictions,
       "target_city": target_city,
       "language": CREW_LANGUAGE[LANGUAGES.get(language, "en")],
+      "recipe_style": recipe_style,
   }
 
-  crew_class = (
-      NourishBotRecipeCrew if workflow_type == "recipe" else NourishBotAnalysisCrew
-  )
+  if workflow_type == "recipe":
+    crew_builder = NourishBotRecipeCrew(
+        image_data=images_arg,
+        manual_ingredients=manual_arg,
+        recipe_style=recipe_style,
+    )
+  else:
+    crew_builder = NourishBotAnalysisCrew(
+        image_data=images_arg, manual_ingredients=manual_arg
+    )
   try:
-    crew = crew_class(image_data=images_arg, manual_ingredients=manual_arg).crew()
-    return dispatch_outputs_to_tabs(crew.kickoff(inputs=inputs), t)
+    recipe_md, shopping_md, nutrition_md = dispatch_outputs_to_tabs(
+        crew_builder.crew().kickoff(inputs=inputs), t
+    )
+    if web_fallback and workflow_type == "recipe":
+      recipe_md = f"{t['msg_web_unavailable']}\n\n{recipe_md}"
+    return recipe_md, shopping_md, nutrition_md
   except Exception as err:
     logging.exception(f"Pipeline failed: {err}")
     return f"{t['msg_error']}\n\n```text\n{err}\n```", "", ""
@@ -446,7 +491,7 @@ def build_hero_html(language: str) -> str:
       f"<div class='ck-hero-body'>{corner_plate}"
       "<div class='ck-hero-text'>"
       f"<div class='ck-ornaments'>{ornaments}</div>"
-      "<h1>Carthage<span>Kitchen</span> AI</h1>"
+      "<h1>Carthage<span> Kitchen</span> </h1>"
       f"<p class='ck-tagline'>{t['tagline']}</p>"
       f"<p class='ck-sub'>{t['subtitle']}</p>"
       "</div>"
@@ -466,11 +511,61 @@ force_light_js = """
 }
 """
 
+
+def print_js(box_id: str) -> str:
+  """Print one output box on its own.
+
+  The box content is copied into a sheet at the top of <body>; the print CSS
+  hides everything else while body has the ck-printing class.
+  """
+  return f"""
+() => {{
+  const box = document.getElementById('{box_id}');
+  if (!box || box.querySelector('.ck-placeholder')) return;
+  const sheet = document.createElement('div');
+  sheet.id = 'ck-print-sheet';
+  sheet.innerHTML = (box.querySelector('.prose') || box).innerHTML;
+  document.body.prepend(sheet);
+  document.body.classList.add('ck-printing');
+  window.addEventListener('afterprint', () => {{
+    sheet.remove();
+    document.body.classList.remove('ck-printing');
+  }}, {{once: true}});
+  window.print();
+}}
+"""
+
+
 # Gradio 6 drops @import rules from css, so the title font is loaded in <head>.
 head = (
     "<link rel='stylesheet' href='https://fonts.googleapis.com/css2?"
     "family=Playfair+Display:wght@600;700&display=swap'>"
 )
+
+# Print styles go in <head> because Gradio prefixes every selector in css
+# with its container class, and these must target body.
+PRINT_CSS = """
+#ck-print-sheet { display: none; }
+@media print {
+  body.ck-printing { background: #fff !important; }
+  body.ck-printing > :not(#ck-print-sheet) { display: none !important; }
+  body.ck-printing #ck-print-sheet {
+    display: block;
+    color: #1c1917;
+    font: 11pt/1.5 Georgia, serif;
+  }
+  #ck-print-sheet h2, #ck-print-sheet h3 {
+    font-family: 'Playfair Display', Georgia, serif;
+    color: #233a7a;
+    break-after: avoid;
+  }
+  #ck-print-sheet table { border-collapse: collapse; width: 100%; }
+  #ck-print-sheet th, #ck-print-sheet td { border: 1px solid #d6d3d1; padding: 4px 8px; }
+  #ck-print-sheet tr, #ck-print-sheet li { break-inside: avoid; }
+  #ck-print-sheet a { color: inherit; }
+}
+"""
+head += f"<style>{PRINT_CSS}</style>"
 
 css = """
 :root {
@@ -787,6 +882,8 @@ gradio-app { position: relative; z-index: 1; }
 }
 .ck-placeholder b { color: var(--ck-accent); }
 
+.ck-print-btn { margin-top: 1rem; align-self: flex-end; }
+
 @media (max-width: 900px) {
   #ck-lang { top: 20px; right: 14px; }
   .ck-hero-body { flex-direction: column; text-align: center; }
@@ -827,6 +924,9 @@ def translate_ui(language, recipe_md, shopping_md, nutrition_md):
           label=t["dish_label"].format(count=len(DISH_NAMES)),
           choices=dish_choices(t),
       ),
+      gr.update(
+          label=t["style_label"], choices=list(zip(t["style_choices"], RECIPE_STYLES))
+      ),
       gr.update(label=t["cravings_label"], placeholder=t["cravings_placeholder"]),
       gr.update(value=t["diet_header"]),
       gr.update(
@@ -845,6 +945,8 @@ def translate_ui(language, recipe_md, shopping_md, nutrition_md):
       gr.update(label=t["out_recipe"]),
       gr.update(label=t["out_shopping"]),
       gr.update(label=t["out_nutrition"]),
+      gr.update(value=t["print_recipe"]),
+      gr.update(value=t["print_shopping"]),
       placeholder_update(recipe_md, "ph_recipe"),
       placeholder_update(shopping_md, "ph_shopping"),
       placeholder_update(nutrition_md, "ph_nutrition"),
@@ -854,7 +956,7 @@ def translate_ui(language, recipe_md, shopping_md, nutrition_md):
 T = ui_text(DEFAULT_LANGUAGE)
 
 with gr.Blocks(
-    title="NourishBot — CarthageKitchen AI",
+    title="NourishBot — Carthage Kitchen ",
     theme=theme,
     css=css,
     js=force_light_js,
@@ -896,6 +998,12 @@ with gr.Blocks(
           interactive=True,
       )
 
+      style_selector = gr.Radio(
+          choices=list(zip(T["style_choices"], RECIPE_STYLES)),
+          value=CLASSIC_STYLE,
+          label=T["style_label"],
+      )
+
       cravings_input = gr.Textbox(
           label=T["cravings_label"],
           placeholder=T["cravings_placeholder"],
@@ -935,12 +1043,22 @@ with gr.Blocks(
     with gr.Column(scale=7, min_width=520, elem_classes="ck-glass"):
       with gr.Tabs(elem_id="ck-output-tabs"):
         with gr.TabItem(T["out_recipe"], elem_id="ck-tab-recipe") as recipe_tab:
-          recipe_box = gr.Markdown(placeholder_html(T["ph_recipe"]))
+          recipe_box = gr.Markdown(
+              placeholder_html(T["ph_recipe"]), elem_id="ck-recipe-md"
+          )
+          print_recipe_btn = gr.Button(
+              T["print_recipe"], size="sm", elem_classes="ck-print-btn"
+          )
 
         with gr.TabItem(
             T["out_shopping"], elem_id="ck-tab-shopping"
         ) as shopping_tab:
-          shopping_box = gr.Markdown(placeholder_html(T["ph_shopping"]))
+          shopping_box = gr.Markdown(
+              placeholder_html(T["ph_shopping"]), elem_id="ck-shopping-md"
+          )
+          print_shopping_btn = gr.Button(
+              T["print_shopping"], size="sm", elem_classes="ck-print-btn"
+          )
 
         with gr.TabItem(
             T["out_nutrition"], elem_id="ck-tab-nutrition"
@@ -958,6 +1076,7 @@ with gr.Blocks(
           manual_text_input,
           dish_header,
           dish_dropdown,
+          style_selector,
           cravings_input,
           diet_header,
           dietary_checks,
@@ -968,11 +1087,16 @@ with gr.Blocks(
           recipe_tab,
           shopping_tab,
           nutrition_tab,
+          print_recipe_btn,
+          print_shopping_btn,
           recipe_box,
           shopping_box,
           analysis_box,
       ],
   )
+
+  print_recipe_btn.click(fn=None, js=print_js("ck-recipe-md"))
+  print_shopping_btn.click(fn=None, js=print_js("ck-shopping-md"))
 
   submit_btn.click(
       fn=run_pipeline,
@@ -985,6 +1109,7 @@ with gr.Blocks(
           dietary_free_text,
           city_selector,
           workflow_selector,
+          style_selector,
           language_selector,
       ],
       outputs=[recipe_box, shopping_box, analysis_box],

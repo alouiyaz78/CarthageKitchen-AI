@@ -39,8 +39,29 @@ suggest_heritage_recipe_task:
     If no dish is requested, use the `search_tunisian_recipes_tool` to query the historical database
     of authentic Tunisian recipes and select the best-matching heritage dish.
 
-    In both cases, stay strictly traditional: keep the vernacular name (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji)
-    and name the traditional techniques (taklia, couscoussier steaming, spice balance) inside the steps, following your lexicon rules.
+    Keep the vernacular name (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji) and name the traditional techniques
+    (taklia, couscoussier steaming, spice balance) inside the steps, following your lexicon rules.
+
+    Recipe style chosen by the user: {recipe_style}
+
+    If the style is "classic": base the recipe strictly on the heritage database (the reference recipe above or the
+    search tool). Do not search the web.
+
+    If the style is "chefs_variants" or "comparison", this step is mandatory before you write anything:
+    call the "Search the internet with Serper" tool, at most twice, to find how a modern Tunisian chef or creator
+    prepares this dish. Good queries are "<dish name> Teyssir Ksouri" (Chef Teyssir Ksouri, also spelled Taysir)
+    and "<dish name> recette chef tunisien" or "<dish name> Hindati". Any Tunisian chef or creator named in the
+    results counts. Attribute to a chef only the details found in a result that names that chef, and give that
+    result's link. Never combine details from different results into one chef's version. If the result naming
+    the chef gives no recipe details, say only that the chef has a version, with the link.
+    - chefs_variants: write that chef's version of the dish. Name the chef in the context sentence and keep the
+      specifics the results mention (marinade, tour de main, taklia). If the results name no chef or give no usable
+      detail, write one short line saying no modern chef version was found, then the classic recipe.
+    - comparison: write the classic heritage recipe, then always end with a section titled "Modern chef's take"
+      (in French: "La version du chef moderne"): at most 4 bullets on how the named chef adjusts the dish, with the
+      source link. This section is 120 words at most and does not count toward the 350-word limit. If the results
+      name no chef or give no usable detail, keep the section and say so in one line.
+    If the style is not classic but no web search tool is available to you, write the classic recipe.
 
     Format it as a compact recipe card read on a screen, 350 words at most:
     - The dish name as a heading, then one sentence of heritage context.
@@ -57,7 +78,8 @@ suggest_heritage_recipe_task:
     Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A compact recipe card of 350 words at most: dish name, one-sentence context, servings and times,
-    ingredients split into pantry and add-ons, numbered steps, up to 2 tips.
+    ingredients split into pantry and add-ons, numbered steps, up to 2 tips. In chefs_variants style the recipe
+    is the named chef's version; in comparison style it ends with a short "Modern chef's take" section.
   agent: recipe_suggestion_agent
 
 source_ingredients_task:

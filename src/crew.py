@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from crewai import LLM, Agent, Crew, Process, Task
+from crewai_tools import SerperDevTool
 from dotenv import load_dotenv
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -52,6 +53,21 @@ if not api_key:
 
 os.environ["ANTHROPIC_API_KEY"] = api_key
 
+# Web search for modern chef variants. SerperDevTool reads the key from the
+# environment, so copy it there when it only comes from the .env file.
+serper_key = (
+    config.serper_api_key.get_secret_value()
+    if config.serper_api_key
+    else os.getenv("SERPER_API_KEY")
+)
+if serper_key:
+  os.environ["SERPER_API_KEY"] = serper_key
+WEB_SEARCH_AVAILABLE = bool(serper_key)
+
+# recipe_style values sent by app.py. Only "classic" runs without web search.
+CLASSIC_STYLE = "classic"
+RECIPE_STYLES = [CLASSIC_STYLE, "chefs_variants", "comparison"]
+
 llm = LLM(
     model="anthropic/claude-haiku-4-5-20251001",
     api_key=api_key,
@@ -78,10 +94,10 @@ AGENT_TOOLS = {
 }
 
 
-def make_agent(name: str) -> Agent:
+def make_agent(name: str, extra_tools=()) -> Agent:
   return Agent(
       config=AGENTS_CONFIG[name],
-      tools=AGENT_TOOLS.get(name, []),
+      tools=AGENT_TOOLS.get(name, []) + list(extra_tools),
       llm=llm,
       verbose=VERBOSE,
   )
@@ -92,11 +108,19 @@ def make_task(name: str, agent: Agent, context=None) -> Task:
   return Task(config=TASKS_CONFIG[name], name=name, agent=agent, **kwargs)
 
 
+def web_search_tool() -> SerperDevTool:
+  # Two searches at most keeps the chef variants mode close to classic speed.
+  return SerperDevTool(n_results=5, max_usage_count=2)
+
+
 class NourishBotRecipeCrew:
 
-  def __init__(self, image_data="None", manual_ingredients="None"):
+  def __init__(
+      self, image_data="None", manual_ingredients="None", recipe_style=CLASSIC_STYLE
+  ):
     self.image_data = image_data
     self.manual_ingredients = manual_ingredients
+    self.recipe_style = recipe_style
 
   def crew(self) -> Crew:
     agents = []
@@ -116,7 +140,12 @@ class NourishBotRecipeCrew:
       filter_task = make_task("filter_dietary_task", filter_agent)
       tasks.append(filter_task)
 
-    chef = make_agent("recipe_suggestion_agent")
+    # Classic mode keeps the chef on the Neon RAG tool only, for speed.
+    use_web = self.recipe_style != CLASSIC_STYLE and WEB_SEARCH_AVAILABLE
+    chef = make_agent(
+        "recipe_suggestion_agent",
+        extra_tools=[web_search_tool()] if use_web else [],
+    )
     sourcer = make_agent("ingredient_sourcing_agent")
     nutritionist = make_agent("nutrient_analysis_agent")
 
