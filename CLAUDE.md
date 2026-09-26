@@ -17,7 +17,7 @@ ruff check .                  # ruff is pinned in requirements.txt
 
 - There is no `pyproject.toml`, so the README's `uv sync` does not work. Use `uv pip` with `requirements.txt`.
 - `requirements.txt` lists only direct dependencies, pinned to the versions tested in `.venv` (crewai 1.15.22, gradio 6.28.0). Check changes with `uv pip compile requirements.txt`.
-- Gradio version mismatch: the README Space front-matter still says `sdk_version: 5.12.0`, while `requirements.txt` and `.venv` use Gradio 6.28. In 6.x, passing `theme`/`css`/`js`/`head` to `gr.Blocks` logs a deprecation warning but still works. `app.py` keeps them on `gr.Blocks` so it runs on both versions.
+- Gradio 6.28.0 everywhere: `.venv`, `requirements.txt` and the README Space front-matter (`sdk_version`, with `python_version: "3.12"`). Keep the three in sync when upgrading. In 6.x, passing `theme`/`css`/`js`/`head` to `gr.Blocks` logs a deprecation warning but still works. `app.py` keeps them on `gr.Blocks` so it runs on both versions.
 - There is no test suite. `test_claude_vision_109.py` is not a pytest file: it is an ingestion script that writes to the production database.
 
 ## Environment
@@ -71,3 +71,13 @@ The background mosaic and the hero photos come from `assets/ui/`. They are serve
 - Code in `src/` and `app.py` uses 2-space indentation. `models.py` and some scripts use 4 spaces. Match the file you are editing.
 - Comments, docstrings, log/print messages, and commit messages are in English. The UI is bilingual (English by default, French via the switch in the header): every visible string lives in `UI_TEXT` in `app.py` and must be added in both languages, and `translate_ui()` must list any new component. Values sent to the crew (dietary profiles, cities, mode) stay in English; only their labels are translated. LLM prompts that target the French cookbooks stay in French.
 - No emoji in UI text, print/log output, or commit messages. Keep comments short and plain: no banner blocks, no comments that restate the code.
+
+## Next steps
+
+**Deterministic nutrition values.** Calories and macros are currently estimated by the LLM in `analyze_nutrition_task` and `analyze_meal_task`, and the numbers are not reliable (arithmetic slips such as 2 dl of oil over 4 servings reported as 5 ml per serving). The planned fix:
+1. Have the recipe task return a structured ingredient list (name, quantity, unit) through `output_pydantic`.
+2. Map each ingredient to a food composition table: Ciqual (ANSES) first, since most ingredient names are French, with USDA FoodData Central as a fallback.
+3. Compute calories, protein, carbohydrates, fat, fiber and sodium per serving in Python.
+4. Pass those computed values to the nutrition agent, which only writes the interpretation and advice.
+
+**Before public deployment.** Replace the images whose rights are unclear or that carry a watermark: `assets/ui/tajine.jpg` shows a "Marie N Guérin" watermark. The other committed images have no visible watermark, but their source still needs checking before publishing.
