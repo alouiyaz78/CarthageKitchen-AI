@@ -1,14 +1,22 @@
+# Python
 __pycache__/
-.env
-.DS_Store
-venv/
 *.pyc
 *.pyo
-.gradio/
 
+# Environnements virtuels
+venv/
+.venv/
+
+# Secrets
 .env
 src/.env
-Doc/recipes_json_cache/
-Doc/extracted_text/
-__pycache__/
-*.pyc
+
+# Gradio
+.gradio/
+
+# Livres de cuisine sources (PDF sous droits) et caches d'ingestion
+Doc/
+
+# Métadonnées Windows/WSL (flux alternatifs NTFS) et macOS
+*:Zone.Identifier
+.DS_Store

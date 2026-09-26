@@ -19,18 +19,18 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 CACHE_DIR = Path("Doc/recipes_json_cache")
 
-# Pages ayant déclenché l'erreur Extra data
+# Pages that failed with json "Extra data" errors in the main run.
 FAILED_PAGES = [117, 126, 129, 130, 131, 132, 134]
 
 
 def robust_json_parse(text: str) -> dict:
-  """Extrait le premier objet JSON valide même s'il y a du texte en trop autour."""
+  """Return the first valid JSON object in text, ignoring anything around it."""
   text = text.strip()
   if "```" in text:
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
 
-  # Recherche du premier bloc { ... }
+  # Find the first { ... } block
   match = re.search(r"(\{.*\})", text, re.DOTALL)
   if match:
     candidate = match.group(1)
@@ -39,7 +39,7 @@ def robust_json_parse(text: str) -> dict:
     except Exception:
       pass
 
-  # Décodage progressif
+  # raw_decode stops at the end of the first object and ignores the rest
   decoder = json.JSONDecoder()
   idx = text.find("{")
   if idx != -1:
@@ -105,13 +105,13 @@ Si la page ne contient PAS de recette :
         raw_text = response.content[0].text
         data = robust_json_parse(raw_text)
 
-        # Sauvegarde propre dans le cache
+        # Cache the cleaned result
         cache_file = CACHE_DIR / f"page_{page_num}.json"
         with open(cache_file, "w", encoding="utf-8") as f:
           json.dump(data, f, ensure_ascii=False, indent=2)
 
         if not data.get("is_recipe", False):
-          print(f"[{page_num}/137] Confirmé : hors recette.")
+          print(f"[{page_num}/137] Not a recipe page.")
           continue
 
         dish_name = data.get("dish_name", f"Recette Page {page_num}")
@@ -139,13 +139,13 @@ Si la page ne contient PAS de recette :
         )
         conn.commit()
         added_count += 1
-        print(f"[{page_num}/137] Rattrapée avec succès : '{dish_name}'")
+        print(f"[{page_num}/137] Recovered: '{dish_name}'")
 
       except Exception as e:
-        print(f"[{page_num}/137] Échec : {e}")
+        print(f"[{page_num}/137] Failed: {e}")
 
   conn.close()
-  print(f"\nRattrapage terminé : {added_count} recettes ajoutées.")
+  print(f"\nDone: {added_count} recipes added.")
 
 
 if __name__ == "__main__":

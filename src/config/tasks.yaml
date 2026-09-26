@@ -9,7 +9,9 @@ detect_ingredients_task:
 
 filter_dietary_task:
   description: >
-    Review the detected ingredients list against user dietary restrictions: {dietary_restrictions}.
+    Ingredients typed by the user: {manual_input}
+    If a previous task detected ingredients in the user's photos, use that list instead (it already includes the typed ones).
+    Review the ingredients against the user's dietary restrictions: {dietary_restrictions}.
     Filter out non-compliant items (e.g., gluten sources like semolina/couscous/malsouka/frik if gluten-free; meats if vegetarian/vegan).
     Flag high-sodium or problematic items if relevant.
   expected_output: >
@@ -18,12 +20,32 @@ filter_dietary_task:
 
 suggest_heritage_recipe_task:
   description: >
-    Take the compliant ingredients list and user preferences ({meal_preference}).
-    Use the `search_tunisian_recipes_tool` to query the historical database of authentic Tunisian recipes.
-    Select the best-matching heritage dish and structure the recipe strictly adhering to tradition:
+    User preferences: {meal_preference}
+    Dietary restrictions: {dietary_restrictions}
+    The compliant ingredients available in the user's pantry are given in the context, if any.
+    If there is no context, the pantry is empty: list every ingredient as an add-on.
+
+    Dish requested by the user: {selected_dish}
+
+    Reference recipe for the requested dish, taken from the heritage database:
+    {heritage_recipe}
+
+    If a dish is requested (anything other than "None"), prepare exactly that dish.
+    Base it on the reference recipe above and do not switch to another dish.
+    If the reference recipe is "None", call `search_tunisian_recipes_tool` with the dish name to find it.
+    Use the available pantry ingredients where they fit and list everything else as add-ons.
+    If the dish conflicts with the dietary restrictions, adapt it and say what you changed.
+
+    If no dish is requested, use the `search_tunisian_recipes_tool` to query the historical database
+    of authentic Tunisian recipes and select the best-matching heritage dish.
+
+    In both cases, structure the recipe strictly adhering to tradition:
     - Retain authentic vernacular names (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji).
     - Detail step-by-step authentic techniques (techwih, couscoussier steaming, spices balance).
     - Clearly separate the available pantry ingredients from necessary 'Add-ons' to achieve culinary authenticity.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A complete authentic Tunisian recipe including dish name, heritage context, ingredients list (with required add-ons), 
     and detailed instructions based on the retrieved historical literature.
@@ -35,6 +57,9 @@ source_ingredients_task:
     For city: {target_city} (e.g., Ottawa/Gatineau or Montreal), identify items requiring special sourcing 
     (tabel, harissa arbi, semoule grain moyen, fresh seafood, specific cuts of lamb or beef).
     Provide exact specialty grocers (e.g., Jasmine Market, Mid-East Food Centre, Marché Adonis) and immediate supermarket equivalents.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A practical grocery guide detailing:
     1. Everyday supermarket substitutes (available at Metro, Loblaws, Maxi).
@@ -44,10 +69,43 @@ source_ingredients_task:
 analyze_nutrition_task:
   description: >
     Analyze the final recipe provided by the chef.
+    Dietary profile: {dietary_restrictions}
     Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
     Account for cooking techniques (olive oil usage, taghmis dipping habits).
     Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A structured nutritional diagnostic panel detailing macros, estimated calories per serving, 
+    and practical advice for metabolic balance and glycemic control.
+  agent: nutrient_analysis_agent
+
+analyze_meal_task:
+  description: >
+    Estimate the nutritional value of the user's meal (analysis-only mode, no recipe is generated).
+
+    Dish selected by the user: {selected_dish}
+
+    Reference recipe for that dish, taken from the heritage database:
+    {heritage_recipe}
+
+    Dietary profile: {dietary_restrictions}
+
+    Ingredients typed by the user: {manual_input}
+    If a previous task is present, its output is the list of ingredients detected in the user's photos (it already includes the typed ones).
+
+    If a dish is selected (anything other than "None"), analyze one standard serving of it, using the reference recipe when available.
+    Otherwise, treat the detected ingredients as a single meal and estimate realistic portions.
+    If there is neither a selected dish nor any detected ingredient, say so plainly and do not invent a meal.
+
+    Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
+    Account for cooking techniques (olive oil usage, taghmis dipping habits).
+    Give practical advice suited to the dietary profile, without ruining authenticity.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
+  expected_output: >
+    A structured nutritional diagnostic panel detailing the analyzed meal, macros, estimated calories per serving,
     and practical advice for metabolic balance and glycemic control.
   agent: nutrient_analysis_agent

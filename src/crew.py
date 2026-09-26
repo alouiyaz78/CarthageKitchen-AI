@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
-from typing import List, Optional
 from crewai import LLM, Agent, Crew, Process, Task
 from dotenv import load_dotenv
-from pydantic import BaseModel, SecretStr
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
@@ -49,7 +48,7 @@ api_key = (
 )
 
 if not api_key:
-  raise RuntimeError("ANTHROPIC_API_KEY introuvable.")
+  raise RuntimeError("ANTHROPIC_API_KEY is not set.")
 
 os.environ["ANTHROPIC_API_KEY"] = api_key
 
@@ -59,122 +58,113 @@ llm = LLM(
     temperature=0.2,
 )
 
+# Agent and crew logs are off by default. Set CREW_VERBOSE=1 to debug.
+VERBOSE = os.getenv("CREW_VERBOSE") == "1"
+
+# Task names, used by app.py to find each output regardless of how many
+# tasks actually ran.
+RECIPE_TASK = "suggest_heritage_recipe_task"
+SOURCING_TASK = "source_ingredients_task"
+NUTRITION_TASK = "analyze_nutrition_task"
+MEAL_ANALYSIS_TASK = "analyze_meal_task"
+
+AGENT_TOOLS = {
+    "ingredient_detection_agent": [
+        extract_ingredients_from_image_and_text,
+        filter_ingredients_list,
+    ],
+    "dietary_filtering_agent": [filter_based_on_dietary_restrictions],
+    "recipe_suggestion_agent": [search_tunisian_recipes_tool],
+}
+
+
+def make_agent(name: str) -> Agent:
+  return Agent(
+      config=AGENTS_CONFIG[name],
+      tools=AGENT_TOOLS.get(name, []),
+      llm=llm,
+      verbose=VERBOSE,
+  )
+
+
+def make_task(name: str, agent: Agent, context=None) -> Task:
+  kwargs = {"context": context} if context is not None else {}
+  return Task(config=TASKS_CONFIG[name], name=name, agent=agent, **kwargs)
+
 
 class NourishBotRecipeCrew:
 
-  def __init__(
-      self,
-      image_data="None",
-      manual_ingredients="None",
-      dietary_restrictions="None",
-      target_city="Ottawa / Gatineau",
-      selected_dish="Auto-detect / Recipe from my ingredients",
-      user_cravings="None",
-  ):
+  def __init__(self, image_data="None", manual_ingredients="None"):
     self.image_data = image_data
     self.manual_ingredients = manual_ingredients
-    self.dietary_restrictions = dietary_restrictions
-    self.target_city = target_city
-    self.selected_dish = selected_dish
-    self.user_cravings = user_cravings
-
-  def ingredient_detection_agent(self) -> Agent:
-    return Agent(
-        config=AGENTS_CONFIG["ingredient_detection_agent"],
-        tools=[
-            extract_ingredients_from_image_and_text,
-            filter_ingredients_list,
-        ],
-        llm=llm,
-        verbose=True,
-    )
-
-  def dietary_filtering_agent(self) -> Agent:
-    return Agent(
-        config=AGENTS_CONFIG["dietary_filtering_agent"],
-        tools=[filter_based_on_dietary_restrictions],
-        llm=llm,
-        verbose=True,
-    )
-
-  def recipe_suggestion_agent(self) -> Agent:
-    return Agent(
-        config=AGENTS_CONFIG["recipe_suggestion_agent"],
-        tools=[search_tunisian_recipes_tool],
-        llm=llm,
-        verbose=True,
-    )
-
-  def ingredient_sourcing_agent(self) -> Agent:
-    return Agent(
-        config=AGENTS_CONFIG["ingredient_sourcing_agent"],
-        llm=llm,
-        verbose=True,
-    )
-
-  def nutrient_analysis_agent(self) -> Agent:
-    return Agent(
-        config=AGENTS_CONFIG["nutrient_analysis_agent"],
-        llm=llm,
-        verbose=True,
-    )
 
   def crew(self) -> Crew:
-    agent_detect = self.ingredient_detection_agent()
-    agent_filter = self.dietary_filtering_agent()
-    agent_chef = self.recipe_suggestion_agent()
-    agent_source = self.ingredient_sourcing_agent()
-    agent_nutri = self.nutrient_analysis_agent()
+    agents = []
+    tasks = []
 
-    task1 = Task(
-        config=TASKS_CONFIG["detect_ingredients_task"], agent=agent_detect
+    # Vision only runs when there are photos. Typed ingredients go straight to
+    # the dietary filter through {manual_input}, and with neither (dish picked
+    # from the menu) there is nothing to filter.
+    filter_task = None
+    if _is_set(self.image_data):
+      detect_agent = make_agent("ingredient_detection_agent")
+      agents.append(detect_agent)
+      tasks.append(make_task("detect_ingredients_task", detect_agent))
+    if _is_set(self.image_data) or _is_set(self.manual_ingredients):
+      filter_agent = make_agent("dietary_filtering_agent")
+      agents.append(filter_agent)
+      filter_task = make_task("filter_dietary_task", filter_agent)
+      tasks.append(filter_task)
+
+    chef = make_agent("recipe_suggestion_agent")
+    sourcer = make_agent("ingredient_sourcing_agent")
+    nutritionist = make_agent("nutrient_analysis_agent")
+
+    recipe_task = make_task(
+        RECIPE_TASK, chef, context=[filter_task] if filter_task else []
     )
-    task2 = Task(config=TASKS_CONFIG["filter_dietary_task"], agent=agent_filter)
-    task3 = Task(
-        config=TASKS_CONFIG["suggest_heritage_recipe_task"], agent=agent_chef
-    )
-    task4 = Task(
-        config=TASKS_CONFIG["source_ingredients_task"], agent=agent_source
-    )
-    task5 = Task(
-        config=TASKS_CONFIG["analyze_nutrition_task"], agent=agent_nutri
+    # Sourcing and nutrition only need the recipe, not the whole history.
+    sourcing_task = make_task(SOURCING_TASK, sourcer, context=[recipe_task])
+    nutrition_task = make_task(
+        NUTRITION_TASK, nutritionist, context=[recipe_task]
     )
 
     return Crew(
-        agents=[agent_detect, agent_filter, agent_chef, agent_source, agent_nutri],
-        tasks=[task1, task2, task3, task4, task5],
+        agents=agents + [chef, sourcer, nutritionist],
+        tasks=tasks + [recipe_task, sourcing_task, nutrition_task],
         process=Process.sequential,
-        verbose=True,
+        verbose=VERBOSE,
     )
 
 
 class NourishBotAnalysisCrew:
 
-  def __init__(
-      self,
-      image_data=None,
-      manual_ingredients=None,
-      dietary_restrictions="None",
-  ):
+  def __init__(self, image_data="None", manual_ingredients="None"):
     self.image_data = image_data
     self.manual_ingredients = manual_ingredients
-    self.dietary_restrictions = dietary_restrictions
-
-  def nutrient_analysis_agent(self) -> Agent:
-    return Agent(
-        config=AGENTS_CONFIG["nutrient_analysis_agent"],
-        llm=llm,
-        verbose=True,
-    )
 
   def crew(self) -> Crew:
-    agent_nutri = self.nutrient_analysis_agent()
-    task = Task(
-        config=TASKS_CONFIG["analyze_nutrition_task"], agent=agent_nutri
-    )
+    agents = []
+    tasks = []
+
+    # Typed ingredients reach the analysis through {manual_input}; vision only
+    # runs when there are photos.
+    if _is_set(self.image_data):
+      detect_agent = make_agent("ingredient_detection_agent")
+      agents.append(detect_agent)
+      tasks.append(make_task("detect_ingredients_task", detect_agent))
+
+    nutritionist = make_agent("nutrient_analysis_agent")
+    agents.append(nutritionist)
+    tasks.append(make_task(MEAL_ANALYSIS_TASK, nutritionist))
+
     return Crew(
-        agents=[agent_nutri],
-        tasks=[task],
+        agents=agents,
+        tasks=tasks,
         process=Process.sequential,
-        verbose=True,
+        verbose=VERBOSE,
     )
+
+
+def _is_set(value) -> bool:
+  return bool(value) and value != "None"
