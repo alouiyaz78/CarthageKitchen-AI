@@ -8,13 +8,12 @@ from fastembed import TextEmbedding
 from litellm import completion
 import psycopg2
 
-# 1. Chargement de la configuration
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Modèle d'embedding mis en cache local
+# Loaded lazily: the first call downloads the model.
 _embedder = None
 
 
@@ -26,21 +25,17 @@ def get_embedder() -> TextEmbedding:
 
 
 def encode_image_to_base64(path: str) -> str:
-  """Lit un fichier image et le convertit en chaîne Base64."""
+  """Read an image file and return it as a base64 string."""
   with open(path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode("utf-8")
-
-
-# ==============================================================================
-# 1. OUTILS D'INSPECTION DU FRIGO & RESTRICTIONS (EXISTANTS)
-# ==============================================================================
 
 
 @tool("extract_ingredients_from_image_and_text")
 def extract_ingredients_from_image_and_text(
     image_input: str = "None", manual_input: str = "None"
 ) -> str:
-  """Extrait et fusionne les ingrédients visibles sur une ou plusieurs images avec les ingrédients saisis manuellement au format texte."""
+  """Extract the ingredients visible in one or more images and merge them with
+  the ingredients typed by the user."""
   content = []
 
   if image_input and image_input not in ["None", "null", ""]:
@@ -80,7 +75,6 @@ def extract_ingredients_from_image_and_text(
   if not content:
     return "Aucun ingrédient détecté ni renseigné."
 
-  # Modèle actif validé sur votre compte
   vision_model = os.getenv("VISION_MODEL", "claude-haiku-4-5-20251001")
   clean_model = vision_model.replace("anthropic/", "")
   litellm_model = f"anthropic/{clean_model}"
@@ -98,7 +92,7 @@ def extract_ingredients_from_image_and_text(
 
 @tool("filter_ingredients_list")
 def filter_ingredients_list(raw_ingredients: str) -> List[str]:
-  """Nettoie, standardise et dé-duplique une chaîne d'ingrédients bruts pour renvoyer une liste Python propre."""
+  """Normalize a raw ingredient string into a de-duplicated list."""
   if not raw_ingredients or raw_ingredients in ["None", "null"]:
     return []
 
@@ -116,7 +110,7 @@ def filter_ingredients_list(raw_ingredients: str) -> List[str]:
 def filter_based_on_dietary_restrictions(
     ingredients: Union[List[str], str], dietary_restrictions: str = "None"
 ) -> List[str]:
-  """Filtre les ingrédients selon les intolérances et régimes spécifiés."""
+  """Remove ingredients that conflict with the given dietary restrictions."""
   if isinstance(ingredients, str):
     ing_list = [i.strip().lower() for i in ingredients.split(",") if i.strip()]
   else:
@@ -173,16 +167,11 @@ def filter_based_on_dietary_restrictions(
   return filtered
 
 
-# ==============================================================================
-# 2. NOUVEL OUTIL RAG : RECHERCHE DANS LA BASE PATRIMONIALE NEON
-# ==============================================================================
-
-
 @tool("search_tunisian_recipes_tool")
 def search_tunisian_recipes_tool(query: str) -> str:
-  """Interroge la base Neon pgvector contenant le livre 'Traditions Culinaires de Tunisie'.
+  """Search the pgvector recipe store built from the Tunisian cookbooks.
 
-  Renvoie les recettes traditionnelles les plus proches avec ingrédients et
+  Returns the closest traditional recipes with their ingredients and
   instructions.
   """
   if not DATABASE_URL:

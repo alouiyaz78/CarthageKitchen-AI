@@ -1,9 +1,8 @@
 import os
 from pathlib import Path
-from typing import List, Optional
 from crewai import LLM, Agent, Crew, Process, Task
 from dotenv import load_dotenv
-from pydantic import BaseModel, SecretStr
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
@@ -49,7 +48,7 @@ api_key = (
 )
 
 if not api_key:
-  raise RuntimeError("ANTHROPIC_API_KEY introuvable.")
+  raise RuntimeError("ANTHROPIC_API_KEY is not set.")
 
 os.environ["ANTHROPIC_API_KEY"] = api_key
 
