@@ -289,6 +289,7 @@ def run_pipeline(
       "manual_input": manual_arg,
       "selected_dish": selected_dish if has_dish else "None",
       "heritage_recipe": heritage_recipe or "None",
+      "has_pantry": "yes" if has_images or has_text else "no",
       "meal_preference": (user_cravings or "").strip() or "None",
       "dietary_restrictions": dietary_restrictions,
       "target_city": target_city,

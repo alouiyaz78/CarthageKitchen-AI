@@ -22,8 +22,8 @@ suggest_heritage_recipe_task:
   description: >
     User preferences: {meal_preference}
     Dietary restrictions: {dietary_restrictions}
-    The compliant ingredients available in the user's pantry are given in the context, if any.
-    If there is no context, the pantry is empty: list every ingredient as an add-on.
+    Did the user provide ingredients: {has_pantry}
+    If yes, the compliant ingredients they have are given in the context.
 
     Dish requested by the user: {selected_dish}
 
@@ -39,16 +39,25 @@ suggest_heritage_recipe_task:
     If no dish is requested, use the `search_tunisian_recipes_tool` to query the historical database
     of authentic Tunisian recipes and select the best-matching heritage dish.
 
-    In both cases, structure the recipe strictly adhering to tradition:
-    - Retain authentic vernacular names (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji).
-    - Detail step-by-step authentic techniques (techwih, couscoussier steaming, spices balance).
-    - Clearly separate the available pantry ingredients from necessary 'Add-ons' to achieve culinary authenticity.
+    In both cases, stay strictly traditional: keep the vernacular name (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji)
+    and name the traditional techniques (techwih, couscoussier steaming, spice balance) inside the steps.
+
+    Format it as a compact recipe card read on a screen, 350 words at most:
+    - The dish name as a heading, then one sentence of heritage context.
+    - One line with servings, prep time and cook time.
+    - Ingredients as short bullets with quantities. If the user provided ingredients, split them into two groups;
+      otherwise give one single list. Group titles:
+      when writing in English, "You already have" and "To add", or "Ingredients" for a single list;
+      when writing in French, "Déjà dans votre cuisine" and "À ajouter", or "Ingrédients" for a single list.
+    - Steps as a numbered list, one or two short sentences each, 10 steps at most.
+    - At most 2 chef tips, one line each. If you adapted the dish to the dietary restrictions, say so in one line.
+    No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
 
     Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
     Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
-    A complete authentic Tunisian recipe including dish name, heritage context, ingredients list (with required add-ons), 
-    and detailed instructions based on the retrieved historical literature.
+    A compact recipe card of 350 words at most: dish name, one-sentence context, servings and times,
+    ingredients split into pantry and add-ons, numbered steps, up to 2 tips.
   agent: recipe_suggestion_agent
 
 source_ingredients_task:
@@ -58,12 +67,18 @@ source_ingredients_task:
     (tabel, harissa arbi, semoule grain moyen, fresh seafood, specific cuts of lamb or beef).
     Provide exact specialty grocers (e.g., Jasmine Market, Mid-East Food Centre, Marché Adonis) and immediate supermarket equivalents.
 
+    Format it as a practical shopping list read on a screen, 250 words at most:
+    - One markdown table with the columns: ingredient, where to buy it in {target_city}, supermarket substitute.
+      List only what the user has to buy: skip every ingredient the recipe says the user already has,
+      and skip salt, water, oil and other basic staples.
+    - Then at most 3 recommended stores, one line each in {language}: name, neighborhood, what to buy there.
+    No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
+
     Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
     Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
-    A practical grocery guide detailing:
-    1. Everyday supermarket substitutes (available at Metro, Loblaws, Maxi).
-    2. Exact specialty ethnic markets in {target_city} with store names and recommended products.
+    A shopping list of 250 words at most: one table (ingredient, specialty store in {target_city}, supermarket substitute)
+    and up to 3 one-line store recommendations.
   agent: ingredient_sourcing_agent
 
 analyze_nutrition_task:
@@ -74,11 +89,19 @@ analyze_nutrition_task:
     Account for cooking techniques (olive oil usage, taghmis dipping habits).
     Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
 
+    Format it as a focused nutrition panel read on a screen, 250 words at most:
+    - One line with the portion size and number of servings.
+    - One markdown table per serving: calories, protein, carbohydrates, fat, fiber, sodium.
+    - Up to 3 short bullets on the key health points for this dietary profile.
+    - Up to 3 short, actionable tips.
+    No ingredient-by-ingredient breakdown and no alternative scenarios.
+    No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
+
     Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
     Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
-    A structured nutritional diagnostic panel detailing macros, estimated calories per serving, 
-    and practical advice for metabolic balance and glycemic control.
+    A nutrition panel of 250 words at most: portion line, one table of per-serving metrics
+    (calories, protein, carbohydrates, fat, fiber, sodium), up to 3 health points and up to 3 tips.
   agent: nutrient_analysis_agent
 
 analyze_meal_task:
@@ -103,9 +126,17 @@ analyze_meal_task:
     Account for cooking techniques (olive oil usage, taghmis dipping habits).
     Give practical advice suited to the dietary profile, without ruining authenticity.
 
+    Format it as a focused nutrition panel read on a screen, 250 words at most:
+    - One line naming the analyzed meal and the portion size.
+    - One markdown table per serving: calories, protein, carbohydrates, fat, fiber, sodium.
+    - Up to 3 short bullets on the key health points for this dietary profile.
+    - Up to 3 short, actionable tips.
+    No ingredient-by-ingredient breakdown and no alternative scenarios.
+    No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
+
     Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
     Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
-    A structured nutritional diagnostic panel detailing the analyzed meal, macros, estimated calories per serving,
-    and practical advice for metabolic balance and glycemic control.
+    A nutrition panel of 250 words at most: meal and portion line, one table of per-serving metrics
+    (calories, protein, carbohydrates, fat, fiber, sodium), up to 3 health points and up to 3 tips.
   agent: nutrient_analysis_agent
