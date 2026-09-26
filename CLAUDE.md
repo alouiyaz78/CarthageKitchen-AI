@@ -32,14 +32,15 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 ## Architecture
 
 **Request flow:** `app.py:run_pipeline` builds an `inputs` dict and calls `.crew().kickoff(inputs=inputs)` on one of two crews in `src/crew.py`:
-- `NourishBotRecipeCrew`: five sequential tasks, in this order: detect ingredients → dietary filter → heritage recipe (RAG) → local sourcing → nutrition.
-- `NourishBotAnalysisCrew`: `detect_ingredients_task` (only when there are images or typed ingredients), then `analyze_meal_task`.
+- `NourishBotRecipeCrew`: detect ingredients (only with photos) → dietary filter (only with photos or typed ingredients) → heritage recipe (RAG) → local sourcing → nutrition. Typed ingredients reach the filter through `{manual_input}` without a vision call. Sourcing and nutrition get `context=[recipe_task]` only, not the whole history.
+- `NourishBotAnalysisCrew`: `detect_ingredients_task` (only with photos), then `analyze_meal_task`.
+- Agent and crew logs are off; set `CREW_VERBOSE=1` to turn them on.
 
 **Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `heritage_recipe`, `meal_preference`, `dietary_restrictions`, `target_city`. If you add a placeholder, you must add the matching key in `app.py`, otherwise CrewAI raises a KeyError. Empty inputs are passed as the string `"None"`.
 
 **Selected dish.** When the user picks a dish, `app.py` fetches it by exact name with `get_recipe_by_name()` (`src/tools.py`) and passes it as `heritage_recipe`. The chef task is told to cook exactly that dish from that reference instead of running the semantic search.
 
-**UI output depends on task position.** `app.py:dispatch_outputs_to_tabs` reads `tasks_output[2]`, `[3]`, and `[4]` to fill the Recipe, Shopping, and Nutrition tabs. If you reorder, add, or remove tasks in `NourishBotRecipeCrew.crew()`, you must update this function too.
+**UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `NUTRITION_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`.
 
 **`src/models.py`** defines Pydantic output schemas (`RecipeOutput`, `NutrientAnalysisOutput`), but no task uses them yet (there is no `output_pydantic`). Task outputs are raw markdown text.
 

@@ -9,7 +9,9 @@ detect_ingredients_task:
 
 filter_dietary_task:
   description: >
-    Review the detected ingredients list against user dietary restrictions: {dietary_restrictions}.
+    Ingredients typed by the user: {manual_input}
+    If a previous task detected ingredients in the user's photos, use that list instead (it already includes the typed ones).
+    Review the ingredients against the user's dietary restrictions: {dietary_restrictions}.
     Filter out non-compliant items (e.g., gluten sources like semolina/couscous/malsouka/frik if gluten-free; meats if vegetarian/vegan).
     Flag high-sodium or problematic items if relevant.
   expected_output: >
@@ -18,7 +20,10 @@ filter_dietary_task:
 
 suggest_heritage_recipe_task:
   description: >
-    Take the compliant ingredients list and user preferences ({meal_preference}).
+    User preferences: {meal_preference}
+    Dietary restrictions: {dietary_restrictions}
+    The compliant ingredients available in the user's pantry are given in the context, if any.
+    If there is no context, the pantry is empty: list every ingredient as an add-on.
 
     Dish requested by the user: {selected_dish}
 
@@ -58,6 +63,7 @@ source_ingredients_task:
 analyze_nutrition_task:
   description: >
     Analyze the final recipe provided by the chef.
+    Dietary profile: {dietary_restrictions}
     Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
     Account for cooking techniques (olive oil usage, taghmis dipping habits).
     Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
@@ -77,7 +83,8 @@ analyze_meal_task:
 
     Dietary profile: {dietary_restrictions}
 
-    If a previous task is present, its output is the list of ingredients detected in the user's photos and notes.
+    Ingredients typed by the user: {manual_input}
+    If a previous task is present, its output is the list of ingredients detected in the user's photos (it already includes the typed ones).
 
     If a dish is selected (anything other than "None"), analyze one standard serving of it, using the reference recipe when available.
     Otherwise, treat the detected ingredients as a single meal and estimate realistic portions.

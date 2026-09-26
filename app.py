@@ -5,7 +5,14 @@ from urllib.parse import quote
 from dotenv import load_dotenv
 import gradio as gr
 import psycopg2
-from src.crew import NourishBotAnalysisCrew, NourishBotRecipeCrew
+from src.crew import (
+    MEAL_ANALYSIS_TASK,
+    NUTRITION_TASK,
+    RECIPE_TASK,
+    SOURCING_TASK,
+    NourishBotAnalysisCrew,
+    NourishBotRecipeCrew,
+)
 from src.tools import get_recipe_by_name
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -42,38 +49,34 @@ DISH_CHOICES = get_heritage_recipes_from_neon()
 def dispatch_outputs_to_tabs(crew_output):
   """Split the crew output into the recipe, shopping and nutrition tabs.
 
-  Relies on the task order in NourishBotRecipeCrew.crew().
+  Outputs are matched by task name, since the number of tasks that run
+  depends on the inputs (no vision step without photos, for example).
   """
-  recipe_md = "## Fiche recette patrimoniale\n\n"
-  shopping_md = "## Guide des courses et marchés locaux\n\n"
-  nutrition_md = "## Bilan nutritionnel et recommandations\n\n"
+  recipe_head = "## Fiche recette patrimoniale\n\n"
+  shopping_head = "## Guide des courses et marchés locaux\n\n"
+  nutrition_head = "## Bilan nutritionnel et recommandations\n\n"
 
-  tasks_out = getattr(crew_output, "tasks_output", [])
+  outputs = {
+      o.name: str(o.raw).strip()
+      for o in getattr(crew_output, "tasks_output", [])
+  }
 
-  if len(tasks_out) >= 5:
-    # suggest_heritage_recipe_task
-    recipe_raw = str(tasks_out[2].raw).strip()
-    recipe_md += recipe_raw
-
-    # source_ingredients_task
-    sourcing_raw = str(tasks_out[3].raw).strip()
-    shopping_md += sourcing_raw
-
-    # analyze_nutrition_task
-    nutrition_raw = str(tasks_out[4].raw).strip()
-    nutrition_md += nutrition_raw
-
-  elif tasks_out:
-    # Analysis crew: a single nutrition task
-    nutrition_md += str(tasks_out[-1].raw)
-    recipe_md = (
-        "*Mode analyse nutritionnelle : aucune recette générée.*"
+  if MEAL_ANALYSIS_TASK in outputs:
+    return (
+        "*Mode analyse nutritionnelle : aucune recette générée.*",
+        "*Pas de liste de courses dans ce mode.*",
+        nutrition_head + outputs[MEAL_ANALYSIS_TASK],
     )
-    shopping_md = "*Pas de liste de courses dans ce mode.*"
-  else:
-    recipe_md += getattr(crew_output, "raw", "Aucun résultat généré.")
 
-  return recipe_md, shopping_md, nutrition_md
+  if RECIPE_TASK not in outputs:
+    raw = getattr(crew_output, "raw", "") or "Aucun résultat généré."
+    return recipe_head + raw, "", ""
+
+  return (
+      recipe_head + outputs[RECIPE_TASK],
+      shopping_head + outputs.get(SOURCING_TASK, ""),
+      nutrition_head + outputs.get(NUTRITION_TASK, ""),
+  )
 
 
 def run_pipeline(
@@ -105,6 +108,8 @@ def run_pipeline(
       else "None"
   )
 
+  manual_arg = manual_text.strip() if has_text else "None"
+
   diet_items = list(dietary_selected) if dietary_selected else []
   if dietary_custom and dietary_custom.strip():
     diet_items.append(dietary_custom.strip())
@@ -115,7 +120,7 @@ def run_pipeline(
 
   inputs = {
       "image_paths": images_arg,
-      "manual_input": manual_text if has_text else "None",
+      "manual_input": manual_arg,
       "selected_dish": selected_dish if has_dish else "None",
       "heritage_recipe": heritage_recipe or "None",
       "meal_preference": user_cravings.strip() if user_cravings else "None",
@@ -123,27 +128,12 @@ def run_pipeline(
       "target_city": target_city,
   }
 
+  crew_class = (
+      NourishBotRecipeCrew if workflow_type == "recipe" else NourishBotAnalysisCrew
+  )
   try:
-    if workflow_type == "recipe":
-      crew = NourishBotRecipeCrew(
-          image_data=images_arg,
-          manual_ingredients=manual_text if has_text else "None",
-          dietary_restrictions=dietary_restrictions,
-          target_city=target_city,
-          selected_dish=selected_dish,
-          user_cravings=user_cravings,
-      ).crew()
-      raw_result = crew.kickoff(inputs=inputs)
-      return dispatch_outputs_to_tabs(raw_result)
-    else:
-      crew = NourishBotAnalysisCrew(
-          image_data=images_arg,
-          manual_ingredients=manual_text if has_text else "None",
-          dietary_restrictions=dietary_restrictions,
-      ).crew()
-      raw_result = crew.kickoff(inputs=inputs)
-      return dispatch_outputs_to_tabs(raw_result)
-
+    crew = crew_class(image_data=images_arg, manual_ingredients=manual_arg).crew()
+    return dispatch_outputs_to_tabs(crew.kickoff(inputs=inputs))
   except Exception as err:
     logging.exception(f"Pipeline failed: {err}")
     return f"**Erreur d'exécution :**\n\n```text\n{str(err)}\n```", "", ""
