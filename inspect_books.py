@@ -5,30 +5,30 @@ from fastembed import TextEmbedding
 import fitz  # PyMuPDF
 import psycopg2
 
-# load of .env
 env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
 DATABASE_URL = os.getenv('DATABASE_URL')
 if not DATABASE_URL:
-  raise ValueError(f'DATABASE_URL notfound in {env_path}.')
+  raise ValueError(f'DATABASE_URL is not set in {env_path}.')
 
-# Modèle open-source ultra-léger et rapide (BAAI/bge-small-en-v1.5 ou all-MiniLM-L6-v2)
+# Runs locally, no API key needed. Must match the model in src/tools.py.
 EMBEDDING_DIM = 384
 embedding_model = TextEmbedding(model_name='BAAI/bge-small-en-v1.5')
 
 
 def init_db():
-  print('🔌 Connexion at PostgreSQL Neon...')
+  print('Connecting to Neon Postgres...')
   conn = psycopg2.connect(DATABASE_URL)
   conn.autocommit = True
   with conn.cursor() as cur:
     cur.execute('CREATE EXTENSION IF NOT EXISTS vector;')
 
-    # A clean recreation of the table adapted to the 384 dimension
-    cur.execute('DROP TABLE IF EXISTS tunisian_recipes CASCADE;')
+    # DROP TABLE is disabled on purpose: this is the production table.
+    # To rebuild it from scratch, drop the table by hand in the Neon console.
+    # cur.execute("DROP TABLE IF EXISTS tunisian_recipes CASCADE;")
     cur.execute(f"""
-            CREATE TABLE tunisian_recipes (
+            CREATE TABLE IF NOT EXISTS tunisian_recipes (
                 id SERIAL PRIMARY KEY,
                 dish_name VARCHAR(255) NOT NULL,
                 source_book VARCHAR(255) NOT NULL,
@@ -45,19 +45,17 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_recipes_embedding 
             ON tunisian_recipes USING hnsw (embedding vector_cosine_ops);
         """)
-  print(
-      f' Schema Neon avaible (dimension {EMBEDDING_DIM} with local FastEmbed ).'
-  )
+  print(f'Schema ready (vector dimension {EMBEDDING_DIM}).')
   return conn
 
 
 def get_embedding(text: str):
-  """Generates the vector locally on your machine."""
+  """Embed text locally with FastEmbed. Returns None on failure."""
   try:
     embeddings = list(embedding_model.embed([text]))
     return embeddings[0].tolist()
   except Exception as e:
-    print(f" Local embedding error !!: {e}")
+    print(f'Embedding failed: {e}')
     return None
 
 
@@ -66,11 +64,11 @@ def ingest_atelier_cuisine(conn):
       'Doc', '172081151-Atelier-Cuisine-Tunisienne-11-03-09.pdf'
   )
   if not os.path.exists(pdf_path):
-    print(f'File not found !: {pdf_path}')
+    print(f'File not found: {pdf_path}')
     return
 
   doc = fitz.open(pdf_path)
-  print(f' Ingestion of {os.path.basename(pdf_path)} ({len(doc)} pages)...')
+  print(f'Ingesting {os.path.basename(pdf_path)} ({len(doc)} pages)...')
 
   recipes_added = 0
   with conn.cursor() as cur:
@@ -79,11 +77,11 @@ def ingest_atelier_cuisine(conn):
       if not page_text or len(page_text) < 50:
         continue
 
-      lines = [l.strip() for l in page_text.splitlines() if l.strip()]
+      lines = [line.strip() for line in page_text.splitlines() if line.strip()]
       dish_name = lines[0] if lines else f'Recipe Page {page_num + 1}'
 
       full_chunk = f'dish: {dish_name}\n\nRecipe:\n{page_text}'
-      print(f"⚙️ Local vectorization of : '{dish_name}'...")
+      print(f"Embedding '{dish_name}'...")
 
       vec = get_embedding(full_chunk)
       if vec:
@@ -104,10 +102,7 @@ def ingest_atelier_cuisine(conn):
         )
         recipes_added += 1
 
-  print(
-      f'\n🎉 Succès : {recipes_added} recip add to pgvector'
-      ' pgvector !'
-  )
+  print(f'\nDone: {recipes_added} recipes inserted.')
 
 
 if __name__ == '__main__':
