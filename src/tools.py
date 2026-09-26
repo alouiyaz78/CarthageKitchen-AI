@@ -1,4 +1,5 @@
 import base64
+import logging
 import os
 from pathlib import Path
 from typing import List, Union
@@ -201,11 +202,43 @@ def search_tunisian_recipes_tool(query: str) -> str:
         "Aucune recette traditionnelle correspondante trouvée dans le livre."
     )
 
-  output = []
-  for row in rows:
-    output.append(
-        f"=== RECETTE : {row[0]} (Page {row[1]}) [Score: {row[4]:.2f}] ===\n"
-        f"INGRÉDIENTS D'ORIGINE :\n{row[2]}\n\n"
-        f"PRÉPARATION AUTHENTIQUE :\n{row[3]}\n"
-    )
-  return "\n---\n".join(output)
+  return "\n---\n".join(
+      format_recipe(row[0], row[1], row[2], row[3], score=row[4])
+      for row in rows
+  )
+
+
+def format_recipe(dish_name, page, ingredients, instructions, score=None) -> str:
+  score_tag = f" [Score: {score:.2f}]" if score is not None else ""
+  return (
+      f"=== RECETTE : {dish_name} (Page {page}){score_tag} ===\n"
+      f"INGRÉDIENTS D'ORIGINE :\n{ingredients}\n\n"
+      f"PRÉPARATION AUTHENTIQUE :\n{instructions}\n"
+  )
+
+
+def get_recipe_by_name(dish_name: str) -> str | None:
+  """Fetch the stored recipe whose dish_name matches exactly.
+
+  Used when the user picks a dish from the dropdown, so the chef works from
+  that exact recipe instead of whatever the semantic search returns.
+  Returns None if the dish is not found or the database is unreachable.
+  """
+  if not DATABASE_URL or not dish_name:
+    return None
+  try:
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+      with conn.cursor() as cur:
+        cur.execute(
+            "SELECT dish_name, page_number, ingredients, instructions"
+            " FROM tunisian_recipes WHERE dish_name = %s LIMIT 1;",
+            (dish_name,),
+        )
+        row = cur.fetchone()
+    finally:
+      conn.close()
+  except psycopg2.Error as err:
+    logging.error(f"Recipe lookup failed for {dish_name!r}: {err}")
+    return None
+  return format_recipe(*row) if row else None

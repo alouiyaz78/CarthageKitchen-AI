@@ -10,13 +10,14 @@ CarthageKitchen AI (repo/package name: NourishBot) is a Gradio app. The README f
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt   # .venv is managed by uv and has no pip
 python app.py                 # Gradio UI on http://0.0.0.0:7860
 ruff check .                  # ruff is pinned in requirements.txt
 ```
 
-- There is no `pyproject.toml`, so the README's `uv sync` does not work. Use pip plus `requirements.txt`.
-- Gradio version mismatch: `requirements.txt` and the README Space front-matter pin `gradio==5.12.0`, but `.venv` has Gradio 6.x. In 6.x, passing `theme`/`css`/`js`/`head` to `gr.Blocks` logs a deprecation warning but still works. `app.py` keeps them on `gr.Blocks` so it runs on both versions.
+- There is no `pyproject.toml`, so the README's `uv sync` does not work. Use `uv pip` with `requirements.txt`.
+- `requirements.txt` lists only direct dependencies, pinned to the versions tested in `.venv` (crewai 1.15.22, gradio 6.28.0). Check changes with `uv pip compile requirements.txt`.
+- Gradio version mismatch: the README Space front-matter still says `sdk_version: 5.12.0`, while `requirements.txt` and `.venv` use Gradio 6.28. In 6.x, passing `theme`/`css`/`js`/`head` to `gr.Blocks` logs a deprecation warning but still works. `app.py` keeps them on `gr.Blocks` so it runs on both versions.
 - There is no test suite. `test_claude_vision_109.py` is not a pytest file: it is an ingestion script that writes to the production database.
 
 ## Environment
@@ -32,9 +33,11 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 
 **Request flow:** `app.py:run_pipeline` builds an `inputs` dict and calls `.crew().kickoff(inputs=inputs)` on one of two crews in `src/crew.py`:
 - `NourishBotRecipeCrew`: five sequential tasks, in this order: detect ingredients → dietary filter → heritage recipe (RAG) → local sourcing → nutrition.
-- `NourishBotAnalysisCrew`: the nutrition task only.
+- `NourishBotAnalysisCrew`: `detect_ingredients_task` (only when there are images or typed ingredients), then `analyze_meal_task`.
 
-**Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `meal_preference`, `dietary_restrictions`, `target_city`. If you add a placeholder, you must add the matching key in `app.py`. The constructor arguments of the crew classes are stored but never used for prompting.
+**Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `heritage_recipe`, `meal_preference`, `dietary_restrictions`, `target_city`. If you add a placeholder, you must add the matching key in `app.py`, otherwise CrewAI raises a KeyError. Empty inputs are passed as the string `"None"`.
+
+**Selected dish.** When the user picks a dish, `app.py` fetches it by exact name with `get_recipe_by_name()` (`src/tools.py`) and passes it as `heritage_recipe`. The chef task is told to cook exactly that dish from that reference instead of running the semantic search.
 
 **UI output depends on task position.** `app.py:dispatch_outputs_to_tabs` reads `tasks_output[2]`, `[3]`, and `[4]` to fill the Recipe, Shopping, and Nutrition tabs. If you reorder, add, or remove tasks in `NourishBotRecipeCrew.crew()`, you must update this function too.
 

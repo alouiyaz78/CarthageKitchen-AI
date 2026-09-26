@@ -159,6 +159,17 @@ class NourishBotAnalysisCrew:
     self.manual_ingredients = manual_ingredients
     self.dietary_restrictions = dietary_restrictions
 
+  def ingredient_detection_agent(self) -> Agent:
+    return Agent(
+        config=AGENTS_CONFIG["ingredient_detection_agent"],
+        tools=[
+            extract_ingredients_from_image_and_text,
+            filter_ingredients_list,
+        ],
+        llm=llm,
+        verbose=True,
+    )
+
   def nutrient_analysis_agent(self) -> Agent:
     return Agent(
         config=AGENTS_CONFIG["nutrient_analysis_agent"],
@@ -167,13 +178,28 @@ class NourishBotAnalysisCrew:
     )
 
   def crew(self) -> Crew:
+    agents = []
+    tasks = []
+
+    # Skip detection when the user only picked a dish: there is nothing to read.
+    if _is_set(self.image_data) or _is_set(self.manual_ingredients):
+      agent_detect = self.ingredient_detection_agent()
+      agents.append(agent_detect)
+      tasks.append(
+          Task(config=TASKS_CONFIG["detect_ingredients_task"], agent=agent_detect)
+      )
+
     agent_nutri = self.nutrient_analysis_agent()
-    task = Task(
-        config=TASKS_CONFIG["analyze_nutrition_task"], agent=agent_nutri
-    )
+    agents.append(agent_nutri)
+    tasks.append(Task(config=TASKS_CONFIG["analyze_meal_task"], agent=agent_nutri))
+
     return Crew(
-        agents=[agent_nutri],
-        tasks=[task],
+        agents=agents,
+        tasks=tasks,
         process=Process.sequential,
         verbose=True,
     )
+
+
+def _is_set(value) -> bool:
+  return bool(value) and value != "None"

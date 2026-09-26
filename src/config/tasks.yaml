@@ -19,8 +19,22 @@ filter_dietary_task:
 suggest_heritage_recipe_task:
   description: >
     Take the compliant ingredients list and user preferences ({meal_preference}).
-    Use the `search_tunisian_recipes_tool` to query the historical database of authentic Tunisian recipes.
-    Select the best-matching heritage dish and structure the recipe strictly adhering to tradition:
+
+    Dish requested by the user: {selected_dish}
+
+    Reference recipe for the requested dish, taken from the heritage database:
+    {heritage_recipe}
+
+    If a dish is requested (anything other than "None"), prepare exactly that dish.
+    Base it on the reference recipe above and do not switch to another dish.
+    If the reference recipe is "None", call `search_tunisian_recipes_tool` with the dish name to find it.
+    Use the available pantry ingredients where they fit and list everything else as add-ons.
+    If the dish conflicts with the dietary restrictions, adapt it and say what you changed.
+
+    If no dish is requested, use the `search_tunisian_recipes_tool` to query the historical database
+    of authentic Tunisian recipes and select the best-matching heritage dish.
+
+    In both cases, structure the recipe strictly adhering to tradition:
     - Retain authentic vernacular names (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji).
     - Detail step-by-step authentic techniques (techwih, couscoussier steaming, spices balance).
     - Clearly separate the available pantry ingredients from necessary 'Add-ons' to achieve culinary authenticity.
@@ -49,5 +63,30 @@ analyze_nutrition_task:
     Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
   expected_output: >
     A structured nutritional diagnostic panel detailing macros, estimated calories per serving, 
+    and practical advice for metabolic balance and glycemic control.
+  agent: nutrient_analysis_agent
+
+analyze_meal_task:
+  description: >
+    Estimate the nutritional value of the user's meal (analysis-only mode, no recipe is generated).
+
+    Dish selected by the user: {selected_dish}
+
+    Reference recipe for that dish, taken from the heritage database:
+    {heritage_recipe}
+
+    Dietary profile: {dietary_restrictions}
+
+    If a previous task is present, its output is the list of ingredients detected in the user's photos and notes.
+
+    If a dish is selected (anything other than "None"), analyze one standard serving of it, using the reference recipe when available.
+    Otherwise, treat the detected ingredients as a single meal and estimate realistic portions.
+    If there is neither a selected dish nor any detected ingredient, say so plainly and do not invent a meal.
+
+    Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
+    Account for cooking techniques (olive oil usage, taghmis dipping habits).
+    Give practical advice suited to the dietary profile, without ruining authenticity.
+  expected_output: >
+    A structured nutritional diagnostic panel detailing the analyzed meal, macros, estimated calories per serving,
     and practical advice for metabolic balance and glycemic control.
   agent: nutrient_analysis_agent

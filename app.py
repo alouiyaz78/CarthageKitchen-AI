@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import gradio as gr
 import psycopg2
 from src.crew import NourishBotAnalysisCrew, NourishBotRecipeCrew
+from src.tools import get_recipe_by_name
 
 CURRENT_DIR = Path(__file__).resolve().parent
 ENV_FILE = CURRENT_DIR / ".env"
@@ -109,10 +110,14 @@ def run_pipeline(
     diet_items.append(dietary_custom.strip())
   dietary_restrictions = ", ".join(diet_items) if diet_items else "None"
 
+  # Look the dish up by its exact name so the chef works from that recipe.
+  heritage_recipe = get_recipe_by_name(selected_dish) if has_dish else None
+
   inputs = {
       "image_paths": images_arg,
       "manual_input": manual_text if has_text else "None",
-      "selected_dish": selected_dish,
+      "selected_dish": selected_dish if has_dish else "None",
+      "heritage_recipe": heritage_recipe or "None",
       "meal_preference": user_cravings.strip() if user_cravings else "None",
       "dietary_restrictions": dietary_restrictions,
       "target_city": target_city,
