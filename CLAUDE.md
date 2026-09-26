@@ -36,11 +36,11 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 - `NourishBotAnalysisCrew`: `detect_ingredients_task` (only with photos), then `analyze_meal_task`.
 - Agent and crew logs are off; set `CREW_VERBOSE=1` to turn them on.
 
-**Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `heritage_recipe`, `meal_preference`, `dietary_restrictions`, `target_city`. If you add a placeholder, you must add the matching key in `app.py`, otherwise CrewAI raises a KeyError. Empty inputs are passed as the string `"None"`.
+**Prompts live in YAML.** `src/config/agents.yaml` and `src/config/tasks.yaml` are loaded when the module is imported. CrewAI fills the `{placeholders}` in the YAML from the `kickoff(inputs=...)` keys: `image_paths`, `manual_input`, `selected_dish`, `heritage_recipe`, `meal_preference`, `dietary_restrictions`, `target_city`, `language` (`English` or `French`, from the UI language switch). If you add a placeholder, you must add the matching key in `app.py`, otherwise CrewAI raises a KeyError. Empty inputs are passed as the string `"None"`.
 
 **Selected dish.** When the user picks a dish, `app.py` fetches it by exact name with `get_recipe_by_name()` (`src/tools.py`) and passes it as `heritage_recipe`. The chef task is told to cook exactly that dish from that reference instead of running the semantic search.
 
-**UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `NUTRITION_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`.
+**UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `NUTRITION_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`. It also strips emoji from the LLM output.
 
 **`src/models.py`** defines Pydantic output schemas (`RecipeOutput`, `NutrientAnalysisOutput`), but no task uses them yet (there is no `output_pydantic`). Task outputs are raw markdown text.
 
@@ -69,5 +69,5 @@ The background mosaic and the hero photos come from `assets/ui/`. They are serve
 ## Conventions
 
 - Code in `src/` and `app.py` uses 2-space indentation. `models.py` and some scripts use 4 spaces. Match the file you are editing.
-- Comments, docstrings, log/print messages, and commit messages are in English. User-facing UI text is in French. LLM prompts that target the French cookbooks stay in French.
+- Comments, docstrings, log/print messages, and commit messages are in English. The UI is bilingual (English by default, French via the switch in the header): every visible string lives in `UI_TEXT` in `app.py` and must be added in both languages, and `translate_ui()` must list any new component. Values sent to the crew (dietary profiles, cities, mode) stay in English; only their labels are translated. LLM prompts that target the French cookbooks stay in French.
 - No emoji in UI text, print/log output, or commit messages. Keep comments short and plain: no banner blocks, no comments that restate the code.

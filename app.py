@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+import re
 from urllib.parse import quote
 from dotenv import load_dotenv
 import gradio as gr
@@ -24,10 +25,12 @@ load_dotenv(dotenv_path=ENV_FILE, override=True)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-def get_heritage_recipes_from_neon() -> list[str]:
-  default_choice = ["Auto-detect / Recipe from my ingredients"]
+AUTO_DETECT = "Auto-detect"
+
+
+def load_dish_names() -> list[str]:
   if not DATABASE_URL:
-    return default_choice
+    return []
   try:
     conn = psycopg2.connect(DATABASE_URL)
     with conn.cursor() as cur:
@@ -37,45 +40,212 @@ def get_heritage_recipes_from_neon() -> list[str]:
       )
       rows = cur.fetchall()
     conn.close()
-    return default_choice + [row[0] for row in rows if row[0]]
+    return [row[0] for row in rows if row[0]]
   except Exception as e:
     logging.error(f"Could not load dish names from Neon: {e}")
-    return default_choice
+    return []
 
 
-DISH_CHOICES = get_heritage_recipes_from_neon()
+DISH_NAMES = load_dish_names()
+
+# Radio label -> language code. The agents get the full language name.
+LANGUAGES = {"English": "en", "Français": "fr"}
+DEFAULT_LANGUAGE = "English"
+CREW_LANGUAGE = {"en": "English", "fr": "French"}
+
+# Values sent to the crew stay in English whatever the UI language; only the
+# labels shown next to them are translated.
+DIETARY_PROFILES = [
+    "Gluten-Free",
+    "Vegetarian",
+    "Vegan",
+    "Diabetic / Low Glycemic",
+    "Low Sodium (Hypertension)",
+]
+CITIES = ["Ottawa / Gatineau", "Montreal"]
+
+UI_TEXT = {
+    "en": {
+        "tagline": "Tunisian Culinary Studio &amp; Nutrition",
+        "subtitle": (
+            "Authentic heritage recipes, local sourcing in"
+            " <b>Ottawa/Gatineau</b> and <b>Montreal</b>, and a full dietary"
+            " assessment."
+        ),
+        "tab_photos": "Ingredient Photos",
+        "tab_text": "Ingredients Input",
+        "upload_label": "Photos of your fridge, pantry or ingredients",
+        "manual_label": "Available ingredients",
+        "manual_placeholder": (
+            "e.g. 2 tomatoes, chili peppers, garlic, olive oil, caraway..."
+        ),
+        "dish_header": "#### Heritage Recipe Choice",
+        "dish_label": "Heritage recipes ({count} dishes)",
+        "auto_detect": "Auto-detect / Recipe from my ingredients",
+        "cravings_label": "Cravings or variations (optional)",
+        "cravings_placeholder": "e.g. fish dish, spicy, family-style...",
+        "diet_header": "#### Dietary Preferences & Health",
+        "diet_label": "Dietary profiles",
+        "diet_choices": [
+            "Gluten-free",
+            "Vegetarian",
+            "Vegan",
+            "Diabetic / Low glycemic",
+            "Low sodium (hypertension)",
+        ],
+        "allergies_label": "Allergies and exclusions",
+        "allergies_placeholder": "e.g. no coriander, very mild chili...",
+        "city_label": "Sourcing city",
+        "city_choices": ["Ottawa / Gatineau", "Montreal"],
+        "mode_label": "Mode",
+        "mode_recipe": "Full culinary studio",
+        "mode_analysis": "Dietary analysis only",
+        "submit": "Generate Recipe & Shopping List",
+        "out_recipe": "1. In the Kitchen",
+        "out_shopping": "2. Grocery & Markets",
+        "out_nutrition": "3. Nutrition",
+        "ph_recipe": (
+            "Your recipe will appear here.",
+            "Step-by-step instructions and traditional techniques.",
+        ),
+        "ph_shopping": (
+            "Your shopping list and local stores will appear here.",
+            "Recommended grocers in Ottawa/Gatineau and Montreal.",
+        ),
+        "ph_nutrition": (
+            "Your nutrition report will appear here.",
+            "Macros, calories and health tips.",
+        ),
+        "head_recipe": "Heritage Recipe",
+        "head_shopping": "Shopping Guide & Local Markets",
+        "head_nutrition": "Nutrition Report & Recommendations",
+        "msg_missing_input": (
+            "**Action needed:** upload a photo, type some ingredients or pick"
+            " a dish from the menu."
+        ),
+        "msg_analysis_recipe": "*Dietary analysis mode: no recipe generated.*",
+        "msg_analysis_shopping": "*No shopping list in this mode.*",
+        "msg_error": "**Something went wrong:**",
+        "msg_no_output": "No result was generated.",
+    },
+    "fr": {
+        "tagline": "Studio Culinaire Tunisien &amp; Nutrition",
+        "subtitle": (
+            "Recettes patrimoniales authentiques, approvisionnement local à"
+            " <b>Ottawa/Gatineau</b> et <b>Montréal</b>, et évaluation"
+            " diététique complète."
+        ),
+        "tab_photos": "Photos des ingrédients",
+        "tab_text": "Ingrédients en texte",
+        "upload_label": "Photos du frigo, placard ou ingrédients",
+        "manual_label": "Ingrédients disponibles",
+        "manual_placeholder": (
+            "Ex : 2 tomates, piments, ail, huile d'olive, carvi..."
+        ),
+        "dish_header": "#### Choix d'une recette du patrimoine",
+        "dish_label": "Recettes patrimoniales ({count} plats)",
+        "auto_detect": "Détection auto / Recette selon mes ingrédients",
+        "cravings_label": "Envies ou variantes (optionnel)",
+        "cravings_placeholder": "Ex : plat au poisson, bien piquant, familial...",
+        "diet_header": "#### Préférences et restrictions santé",
+        "diet_label": "Profils diététiques",
+        "diet_choices": [
+            "Sans gluten",
+            "Végétarien",
+            "Végétalien",
+            "Diabétique / IG bas",
+            "Pauvre en sel (hypertension)",
+        ],
+        "allergies_label": "Allergies et exclusions",
+        "allergies_placeholder": "Ex : sans coriandre, piment très doux...",
+        "city_label": "Ville de sourcing",
+        "city_choices": ["Ottawa / Gatineau", "Montréal"],
+        "mode_label": "Mode",
+        "mode_recipe": "Studio culinaire complet",
+        "mode_analysis": "Analyse diététique seule",
+        "submit": "Générer la recette et la liste de courses",
+        "out_recipe": "1. En cuisine",
+        "out_shopping": "2. Épicerie et marchés",
+        "out_nutrition": "3. Nutrition",
+        "ph_recipe": (
+            "La fiche recette détaillée s'affichera ici.",
+            "Instructions pas à pas et techniques traditionnelles.",
+        ),
+        "ph_shopping": (
+            "La liste des courses et les adresses locales s'afficheront ici.",
+            "Épiceries recommandées à Ottawa/Gatineau et Montréal.",
+        ),
+        "ph_nutrition": (
+            "Le bilan nutritionnel s'affichera ici.",
+            "Macros, calories et conseils de santé.",
+        ),
+        "head_recipe": "Fiche recette patrimoniale",
+        "head_shopping": "Guide des courses et marchés locaux",
+        "head_nutrition": "Bilan nutritionnel et recommandations",
+        "msg_missing_input": (
+            "**Action requise :** chargez une photo, saisissez des ingrédients"
+            " ou choisissez un plat dans le menu."
+        ),
+        "msg_analysis_recipe": (
+            "*Mode analyse diététique : aucune recette générée.*"
+        ),
+        "msg_analysis_shopping": "*Pas de liste de courses dans ce mode.*",
+        "msg_error": "**Erreur d'exécution :**",
+        "msg_no_output": "Aucun résultat généré.",
+    },
+}
 
 
-def dispatch_outputs_to_tabs(crew_output):
+def ui_text(language: str) -> dict:
+  return UI_TEXT[LANGUAGES.get(language, "en")]
+
+
+def placeholder_html(lines: tuple[str, str]) -> str:
+  title, detail = lines
+  return f"<div class='ck-placeholder'><b>{title}</b><br>{detail}</div>"
+
+
+def dish_choices(t: dict) -> list[tuple[str, str]]:
+  return [(t["auto_detect"], AUTO_DETECT)] + [(n, n) for n in DISH_NAMES]
+
+
+# The prompts ask for no emoji, but the model still slips in symbols like
+# check marks and warning signs now and then.
+EMOJI_PATTERN = re.compile(
+    "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]"
+)
+
+
+def strip_emoji(text: str) -> str:
+  return EMOJI_PATTERN.sub("", text)
+
+
+def dispatch_outputs_to_tabs(crew_output, t: dict):
   """Split the crew output into the recipe, shopping and nutrition tabs.
 
   Outputs are matched by task name, since the number of tasks that run
   depends on the inputs (no vision step without photos, for example).
   """
-  recipe_head = "## Fiche recette patrimoniale\n\n"
-  shopping_head = "## Guide des courses et marchés locaux\n\n"
-  nutrition_head = "## Bilan nutritionnel et recommandations\n\n"
-
   outputs = {
-      o.name: str(o.raw).strip()
+      o.name: strip_emoji(str(o.raw)).strip()
       for o in getattr(crew_output, "tasks_output", [])
   }
 
   if MEAL_ANALYSIS_TASK in outputs:
     return (
-        "*Mode analyse nutritionnelle : aucune recette générée.*",
-        "*Pas de liste de courses dans ce mode.*",
-        nutrition_head + outputs[MEAL_ANALYSIS_TASK],
+        t["msg_analysis_recipe"],
+        t["msg_analysis_shopping"],
+        f"## {t['head_nutrition']}\n\n{outputs[MEAL_ANALYSIS_TASK]}",
     )
 
   if RECIPE_TASK not in outputs:
-    raw = getattr(crew_output, "raw", "") or "Aucun résultat généré."
-    return recipe_head + raw, "", ""
+    raw = getattr(crew_output, "raw", "") or t["msg_no_output"]
+    return f"## {t['head_recipe']}\n\n{raw}", "", ""
 
   return (
-      recipe_head + outputs[RECIPE_TASK],
-      shopping_head + outputs.get(SOURCING_TASK, ""),
-      nutrition_head + outputs.get(NUTRITION_TASK, ""),
+      f"## {t['head_recipe']}\n\n{outputs[RECIPE_TASK]}",
+      f"## {t['head_shopping']}\n\n{outputs.get(SOURCING_TASK, '')}",
+      f"## {t['head_nutrition']}\n\n{outputs.get(NUTRITION_TASK, '')}",
   )
 
 
@@ -88,26 +258,22 @@ def run_pipeline(
     dietary_custom,
     target_city,
     workflow_type,
+    language,
     progress=gr.Progress(track_tqdm=True),
 ):
+  t = ui_text(language)
   has_images = bool(image_files and len(image_files) > 0)
   has_text = bool(manual_text and manual_text.strip())
-  has_dish = selected_dish and not selected_dish.startswith("Auto-detect")
+  has_dish = bool(selected_dish) and selected_dish != AUTO_DETECT
 
   if not has_images and not has_text and not has_dish:
-    return (
-        "**Action requise :** veuillez charger une photo, saisir des"
-        " ingrédients ou choisir un plat dans le menu.",
-        "",
-        "",
-    )
+    return t["msg_missing_input"], "", ""
 
   images_arg = (
       ",".join([f.name if hasattr(f, "name") else str(f) for f in image_files])
       if has_images
       else "None"
   )
-
   manual_arg = manual_text.strip() if has_text else "None"
 
   diet_items = list(dietary_selected) if dietary_selected else []
@@ -123,9 +289,10 @@ def run_pipeline(
       "manual_input": manual_arg,
       "selected_dish": selected_dish if has_dish else "None",
       "heritage_recipe": heritage_recipe or "None",
-      "meal_preference": user_cravings.strip() if user_cravings else "None",
+      "meal_preference": (user_cravings or "").strip() or "None",
       "dietary_restrictions": dietary_restrictions,
       "target_city": target_city,
+      "language": CREW_LANGUAGE[LANGUAGES.get(language, "en")],
   }
 
   crew_class = (
@@ -133,10 +300,10 @@ def run_pipeline(
   )
   try:
     crew = crew_class(image_data=images_arg, manual_ingredients=manual_arg).crew()
-    return dispatch_outputs_to_tabs(crew.kickoff(inputs=inputs))
+    return dispatch_outputs_to_tabs(crew.kickoff(inputs=inputs), t)
   except Exception as err:
     logging.exception(f"Pipeline failed: {err}")
-    return f"**Erreur d'exécution :**\n\n```text\n{str(err)}\n```", "", ""
+    return f"{t['msg_error']}\n\n```text\n{err}\n```", "", ""
 
 
 # UI theme: colors taken from the mosaic background and Sidi Bou Said blue.
@@ -183,13 +350,16 @@ theme = gr.themes.Soft(
 # Only the files listed here are served by Gradio, not the whole folder.
 UI_ASSETS_DIR = CURRENT_DIR / "assets" / "ui"
 MOSAIC_FILE = UI_ASSETS_DIR / "mosaique_Tunisienne.jpg"
-# (file, caption, object-position)
+# (file, object-position, captions)
 VIGNETTES = [
-    ("couscous.jpeg.webp", "Couscous au poisson", "center"),
-    ("Ojja_bel_mregez.jpg", "Ojja merguez", "center 70%"),
-    ("tajine.jpg", "Tajine tunisien", "center"),
-    ("brick.jpg", "Brick à l'œuf", "60% center"),
-    ("fricasse.jpg", "Fricassé tunisien", "center"),
+    ("couscous.jpeg.webp", "center",
+     {"en": "Fish couscous", "fr": "Couscous au poisson"}),
+    ("Ojja_bel_mregez.jpg", "center 70%",
+     {"en": "Ojja with merguez", "fr": "Ojja merguez"}),
+    ("tajine.jpg", "center", {"en": "Tunisian tajine", "fr": "Tajine tunisien"}),
+    ("brick.jpg", "60% center", {"en": "Egg brik", "fr": "Brick à l'œuf"}),
+    ("fricasse.jpg", "center",
+     {"en": "Tunisian fricassé", "fr": "Fricassé tunisien"}),
 ]
 # Empty Nabeul plate, used as a corner decoration rather than a dish photo.
 CORNER_PLATE = UI_ASSETS_DIR / "assiette-tunisienne-145-p.jpg"
@@ -245,12 +415,14 @@ def svg_data_uri(svg: str) -> str:
   return "data:image/svg+xml," + quote(svg)
 
 
-def build_hero_html() -> str:
+def build_hero_html(language: str) -> str:
+  code = LANGUAGES.get(language, "en")
+  t = UI_TEXT[code]
   vignettes = "".join(
       f"<figure class='ck-vignette'><img src='{ui_asset_url(UI_ASSETS_DIR / name)}'"
-      f" alt=\"{label}\" loading='lazy' style='object-position:{pos}'>"
-      f"<figcaption>{label}</figcaption></figure>"
-      for name, label, pos in VIGNETTES
+      f" alt=\"{captions[code]}\" loading='lazy' style='object-position:{pos}'>"
+      f"<figcaption>{captions[code]}</figcaption></figure>"
+      for name, pos, captions in VIGNETTES
       if (UI_ASSETS_DIR / name).exists()
   )
   corner_plate = (
@@ -274,10 +446,8 @@ def build_hero_html() -> str:
       "<div class='ck-hero-text'>"
       f"<div class='ck-ornaments'>{ornaments}</div>"
       "<h1>Carthage<span>Kitchen</span> AI</h1>"
-      "<p class='ck-tagline'>Studio Culinaire Tunisien &amp; Nutrition</p>"
-      "<p class='ck-sub'>Recettes patrimoniales authentiques, approvisionnement"
-      " local à <b>Ottawa/Gatineau</b> et <b>Montréal</b>, et évaluation"
-      " diététique complète.</p>"
+      f"<p class='ck-tagline'>{t['tagline']}</p>"
+      f"<p class='ck-sub'>{t['subtitle']}</p>"
       "</div>"
       f"<div class='ck-vignettes'>{vignettes}</div>"
       "</div><div class='ck-band'></div></div>"
@@ -361,6 +531,40 @@ gradio-app { position: relative; z-index: 1; }
   body::before { left: 0; border-right: 3px solid var(--ck-saffron); }
   body::after { right: 0; border-left: 3px solid var(--ck-saffron); }
 }
+
+/* Language switch, pinned to the top-right corner of the header. */
+#ck-header { position: relative; gap: 0 !important; }
+#ck-lang {
+  position: absolute;
+  top: 24px;
+  right: 22px;
+  z-index: 5;
+  width: auto !important;
+  min-width: 0 !important;
+  flex: none !important;
+}
+#ck-lang .wrap { gap: 0 !important; flex-wrap: nowrap; }
+#ck-lang label {
+  margin: 0 !important;
+  padding: 0.2rem 0.7rem !important;
+  font-size: 0.75rem !important;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--ck-spice) !important;
+  background: rgba(246, 236, 219, 0.9) !important;
+  border: 1px solid rgba(201, 138, 43, 0.45) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  cursor: pointer;
+}
+#ck-lang label:first-child { border-radius: 999px 0 0 999px !important; }
+#ck-lang label:last-child { border-radius: 0 999px 999px 0 !important; border-left: none !important; }
+#ck-lang label.selected, #ck-lang label:has(input:checked) {
+  color: #fff !important;
+  background: var(--ck-blue) !important;
+  border-color: var(--ck-blue) !important;
+}
+#ck-lang input[type="radio"] { display: none; }
 
 /* Header */
 .ck-hero {
@@ -583,6 +787,7 @@ gradio-app { position: relative; z-index: 1; }
 .ck-placeholder b { color: var(--ck-accent); }
 
 @media (max-width: 900px) {
+  #ck-lang { top: 20px; right: 14px; }
   .ck-hero-body { flex-direction: column; text-align: center; }
   .ck-ornaments { justify-content: center; }
   .ck-vignette img { width: 64px; height: 64px; }
@@ -594,6 +799,59 @@ gradio-app { position: relative; z-index: 1; }
 }
 """.replace("__MOSAIC_URL__", ui_asset_url(MOSAIC_FILE))
 
+# Placeholders in every language, so a language switch only replaces an
+# output box that still shows its placeholder, never a generated result.
+OUTPUT_PLACEHOLDERS = {
+    key: {placeholder_html(t[key]) for t in UI_TEXT.values()}
+    for key in ("ph_recipe", "ph_shopping", "ph_nutrition")
+}
+
+
+def translate_ui(language, recipe_md, shopping_md, nutrition_md):
+  t = ui_text(language)
+
+  def placeholder_update(current, key):
+    if current in OUTPUT_PLACEHOLDERS[key]:
+      return gr.update(value=placeholder_html(t[key]))
+    return gr.update()
+
+  return [
+      gr.update(value=build_hero_html(language)),
+      gr.update(label=t["tab_photos"]),
+      gr.update(label=t["upload_label"]),
+      gr.update(label=t["tab_text"]),
+      gr.update(label=t["manual_label"], placeholder=t["manual_placeholder"]),
+      gr.update(value=t["dish_header"]),
+      gr.update(
+          label=t["dish_label"].format(count=len(DISH_NAMES)),
+          choices=dish_choices(t),
+      ),
+      gr.update(label=t["cravings_label"], placeholder=t["cravings_placeholder"]),
+      gr.update(value=t["diet_header"]),
+      gr.update(
+          label=t["diet_label"],
+          choices=list(zip(t["diet_choices"], DIETARY_PROFILES)),
+      ),
+      gr.update(
+          label=t["allergies_label"], placeholder=t["allergies_placeholder"]
+      ),
+      gr.update(label=t["city_label"], choices=list(zip(t["city_choices"], CITIES))),
+      gr.update(
+          label=t["mode_label"],
+          choices=[(t["mode_recipe"], "recipe"), (t["mode_analysis"], "analysis")],
+      ),
+      gr.update(value=t["submit"]),
+      gr.update(label=t["out_recipe"]),
+      gr.update(label=t["out_shopping"]),
+      gr.update(label=t["out_nutrition"]),
+      placeholder_update(recipe_md, "ph_recipe"),
+      placeholder_update(shopping_md, "ph_shopping"),
+      placeholder_update(nutrition_md, "ph_nutrition"),
+  ]
+
+
+T = ui_text(DEFAULT_LANGUAGE)
+
 with gr.Blocks(
     title="NourishBot — CarthageKitchen AI",
     theme=theme,
@@ -601,80 +859,73 @@ with gr.Blocks(
     js=force_light_js,
     head=head,
 ) as demo:
-  gr.HTML(build_hero_html())
+  with gr.Column(elem_id="ck-header"):
+    hero_html = gr.HTML(build_hero_html(DEFAULT_LANGUAGE))
+    language_selector = gr.Radio(
+        choices=list(LANGUAGES),
+        value=DEFAULT_LANGUAGE,
+        show_label=False,
+        container=False,
+        elem_id="ck-lang",
+    )
 
   with gr.Row():
     with gr.Column(scale=5, min_width=360, elem_classes="ck-glass"):
       with gr.Tabs(elem_classes="ck-input-tabs"):
-        with gr.TabItem("Photos des ingrédients"):
+        with gr.TabItem(T["tab_photos"]) as photos_tab:
           image_files_input = gr.File(
               file_count="multiple",
               file_types=["image"],
               type="filepath",
-              label="Photos du frigo, placard ou ingrédients",
+              label=T["upload_label"],
               elem_classes="ck-upload",
           )
-        with gr.TabItem("Ingrédients en texte"):
+        with gr.TabItem(T["tab_text"]) as text_tab:
           manual_text_input = gr.Textbox(
-              label="Ingrédients disponibles",
-              placeholder="Ex: 2 tomates, piments, ail, huile d'olive, carvi...",
+              label=T["manual_label"],
+              placeholder=T["manual_placeholder"],
               lines=3,
           )
 
-      gr.Markdown(
-          "#### Choix direct d'une recette du patrimoine",
-          elem_classes="category-header",
-      )
+      dish_header = gr.Markdown(T["dish_header"], elem_classes="category-header")
       dish_dropdown = gr.Dropdown(
-          choices=DISH_CHOICES,
-          value="Auto-detect / Recipe from my ingredients",
-          label="Répertoire Historique (83 Recettes Neon pgvector)",
+          choices=dish_choices(T),
+          value=AUTO_DETECT,
+          label=T["dish_label"].format(count=len(DISH_NAMES)),
           interactive=True,
       )
 
       cravings_input = gr.Textbox(
-          label="Envies spécifiques ou variantes (Optionnel)",
-          placeholder="Ex: plat au poisson, bien piquant, familial...",
+          label=T["cravings_label"],
+          placeholder=T["cravings_placeholder"],
           lines=1,
       )
 
-      gr.Markdown(
-          "#### Préférences et restrictions santé",
-          elem_classes="category-header",
-      )
+      diet_header = gr.Markdown(T["diet_header"], elem_classes="category-header")
       dietary_checks = gr.CheckboxGroup(
-          choices=[
-              "Gluten-Free",
-              "Vegetarian",
-              "Vegan",
-              "Diabetic / Low Glycemic",
-              "Low Sodium (Hypertension)",
-          ],
-          label="Profils Diététiques",
+          choices=list(zip(T["diet_choices"], DIETARY_PROFILES)),
+          label=T["diet_label"],
           value=[],
       )
       dietary_free_text = gr.Textbox(
-          label="Allergies & Exclusions spécifiques",
-          placeholder="Ex: sans coriandre, piment très doux...",
+          label=T["allergies_label"],
+          placeholder=T["allergies_placeholder"],
       )
 
       with gr.Row():
         city_selector = gr.Dropdown(
-            choices=["Ottawa / Gatineau", "Montreal"],
-            value="Ottawa / Gatineau",
-            label="Ville de sourcing",
+            choices=list(zip(T["city_choices"], CITIES)),
+            value=CITIES[0],
+            label=T["city_label"],
         )
         workflow_selector = gr.Radio(
-            choices=[
-                ("Studio Culinaire Complet", "recipe"),
-                ("Analyse Diététique Seule", "analysis"),
-            ],
+            choices=[(T["mode_recipe"], "recipe"), (T["mode_analysis"], "analysis")],
             value="recipe",
-            label="Mode d'Exécution",
+            label=T["mode_label"],
         )
 
       submit_btn = gr.Button(
-          "Générer la recette et la liste de courses",
+          T["submit"],
           variant="primary",
           size="lg",
           elem_id="ck-submit",
@@ -682,33 +933,45 @@ with gr.Blocks(
 
     with gr.Column(scale=7, min_width=520, elem_classes="ck-glass"):
       with gr.Tabs(elem_id="ck-output-tabs"):
-        with gr.TabItem(
-            "1. En cuisine", elem_id="ck-tab-recipe"
-        ):
-          recipe_box = gr.Markdown(
-              "<div class='ck-placeholder'>"
-              "<b>La fiche recette détaillée s'affichera ici.</b><br>"
-              "Instructions pas à pas et techniques traditionnelles.</div>"
-          )
+        with gr.TabItem(T["out_recipe"], elem_id="ck-tab-recipe") as recipe_tab:
+          recipe_box = gr.Markdown(placeholder_html(T["ph_recipe"]))
 
         with gr.TabItem(
-            "2. Épicerie et marchés", elem_id="ck-tab-shopping"
-        ):
-          shopping_box = gr.Markdown(
-              "<div class='ck-placeholder'>"
-              "<b>La liste des courses et les adresses locales s'afficheront"
-              " ici.</b><br>Épiceries recommandées à Ottawa/Gatineau et"
-              " Montréal.</div>"
-          )
+            T["out_shopping"], elem_id="ck-tab-shopping"
+        ) as shopping_tab:
+          shopping_box = gr.Markdown(placeholder_html(T["ph_shopping"]))
 
         with gr.TabItem(
-            "3. Nutrition", elem_id="ck-tab-nutrition"
-        ):
-          analysis_box = gr.Markdown(
-              "<div class='ck-placeholder'>"
-              "<b>Le bilan nutritionnel et métabolique s'affichera ici.</b><br>"
-              "Macros, calories et conseils de santé.</div>"
-          )
+            T["out_nutrition"], elem_id="ck-tab-nutrition"
+        ) as nutrition_tab:
+          analysis_box = gr.Markdown(placeholder_html(T["ph_nutrition"]))
+
+  language_selector.change(
+      fn=translate_ui,
+      inputs=[language_selector, recipe_box, shopping_box, analysis_box],
+      outputs=[
+          hero_html,
+          photos_tab,
+          image_files_input,
+          text_tab,
+          manual_text_input,
+          dish_header,
+          dish_dropdown,
+          cravings_input,
+          diet_header,
+          dietary_checks,
+          dietary_free_text,
+          city_selector,
+          workflow_selector,
+          submit_btn,
+          recipe_tab,
+          shopping_tab,
+          nutrition_tab,
+          recipe_box,
+          shopping_box,
+          analysis_box,
+      ],
+  )
 
   submit_btn.click(
       fn=run_pipeline,
@@ -721,6 +984,7 @@ with gr.Blocks(
           dietary_free_text,
           city_selector,
           workflow_selector,
+          language_selector,
       ],
       outputs=[recipe_box, shopping_box, analysis_box],
   )

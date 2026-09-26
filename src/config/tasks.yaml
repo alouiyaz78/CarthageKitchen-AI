@@ -43,6 +43,9 @@ suggest_heritage_recipe_task:
     - Retain authentic vernacular names (e.g., Kousksi bil Quarnit, Rouz Jerbi, Kafteji).
     - Detail step-by-step authentic techniques (techwih, couscoussier steaming, spices balance).
     - Clearly separate the available pantry ingredients from necessary 'Add-ons' to achieve culinary authenticity.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A complete authentic Tunisian recipe including dish name, heritage context, ingredients list (with required add-ons), 
     and detailed instructions based on the retrieved historical literature.
@@ -54,6 +57,9 @@ source_ingredients_task:
     For city: {target_city} (e.g., Ottawa/Gatineau or Montreal), identify items requiring special sourcing 
     (tabel, harissa arbi, semoule grain moyen, fresh seafood, specific cuts of lamb or beef).
     Provide exact specialty grocers (e.g., Jasmine Market, Mid-East Food Centre, Marché Adonis) and immediate supermarket equivalents.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A practical grocery guide detailing:
     1. Everyday supermarket substitutes (available at Metro, Loblaws, Maxi).
@@ -67,6 +73,9 @@ analyze_nutrition_task:
     Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
     Account for cooking techniques (olive oil usage, taghmis dipping habits).
     Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A structured nutritional diagnostic panel detailing macros, estimated calories per serving, 
     and practical advice for metabolic balance and glycemic control.
@@ -93,6 +102,9 @@ analyze_meal_task:
     Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
     Account for cooking techniques (olive oil usage, taghmis dipping habits).
     Give practical advice suited to the dietary profile, without ruining authenticity.
+
+    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
+    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A structured nutritional diagnostic panel detailing the analyzed meal, macros, estimated calories per serving,
     and practical advice for metabolic balance and glycemic control.
