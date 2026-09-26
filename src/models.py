@@ -49,7 +49,7 @@ class Recipe(BaseModel):
     )
     chef_tips: Optional[str] = Field(
         None, 
-        description="Teyssir Ksouri pedagogical advice (e.g., techwih blooming, oven roasting, spice balance)"
+        description="Teyssir Ksouri pedagogical advice (e.g., taklia, oven roasting, spice balance)"
     )
     sourcing_guide: List[SourcingItem] = Field(
         default_factory=list, 

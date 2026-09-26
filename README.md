@@ -15,7 +15,7 @@ license: mit
 
 CarthageKitchen-AI is a multi-agent culinary and clinical nutrition platform designed to bridge authentic Tunisian gastronomy with modern dietary management and localized grocery sourcing in Canada (**Ottawa/Gatineau** and **Montreal**).
 
-The platform accepts photos of pantry/fridge items or dish images, detects ingredients, respects clinical restrictions, suggests authentic recipes with cultural precision (e.g., proper *techwih* spice blooming technique), maps out local specialty grocers, and delivers detailed metabolic diagnostics.
+The platform accepts photos of pantry/fridge items or dish images, detects ingredients, respects clinical restrictions, suggests authentic recipes with cultural precision (e.g., the *taklia*, frying the spices and tomato paste in oil), maps out local specialty grocers, and delivers detailed metabolic diagnostics.
 
 ---
 
