@@ -17,6 +17,7 @@ from src.crew import (
     NourishBotAnalysisCrew,
     NourishBotRecipeCrew,
 )
+from src.dish_categories import CATEGORIES, dish_category
 from src.tools import get_recipe_by_name
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -85,6 +86,29 @@ UI_TEXT = {
         "dish_header": "#### Heritage Recipe Choice",
         "dish_label": "Heritage recipes ({count} dishes)",
         "auto_detect": "Auto-detect / Recipe from my ingredients",
+        "category_label": "Dish type",
+        "category_all": "All dishes",
+        # Plural names for the filter, short names as prefixes in the full list.
+        "category_names": {
+            "main": "Main dishes",
+            "starter": "Starters & salads",
+            "soup": "Soups",
+            "bread": "Breads & doughs",
+            "sweet": "Sweets & desserts",
+            "drink": "Drinks",
+            "sauce": "Sauces & condiments",
+            "other": "Other",
+        },
+        "category_short": {
+            "main": "Main",
+            "starter": "Starter",
+            "soup": "Soup",
+            "bread": "Bread",
+            "sweet": "Sweet",
+            "drink": "Drink",
+            "sauce": "Sauce",
+            "other": "Other",
+        },
         "style_label": "Recipe style",
         "style_choices": [
             "Classic Heritage (Books & Neon RAG)",
@@ -164,6 +188,28 @@ UI_TEXT = {
         "dish_header": "#### Choix d'une recette du patrimoine",
         "dish_label": "Recettes patrimoniales ({count} plats)",
         "auto_detect": "Détection auto / Recette selon mes ingrédients",
+        "category_label": "Type de plat",
+        "category_all": "Tous les plats",
+        "category_names": {
+            "main": "Plats principaux",
+            "starter": "Entrées et salades",
+            "soup": "Soupes",
+            "bread": "Pains et pâtes traditionnelles",
+            "sweet": "Desserts et douceurs",
+            "drink": "Boissons",
+            "sauce": "Sauces et condiments",
+            "other": "Autres",
+        },
+        "category_short": {
+            "main": "Plat",
+            "starter": "Entrée",
+            "soup": "Soupe",
+            "bread": "Pain",
+            "sweet": "Douceur",
+            "drink": "Boisson",
+            "sauce": "Sauce",
+            "other": "Autre",
+        },
         "style_label": "Style de recette",
         "style_choices": [
             "Patrimoine classique (livres et base Neon)",
@@ -240,8 +286,40 @@ def placeholder_html(lines: tuple[str, str]) -> str:
   return f"<div class='ck-placeholder'><b>{title}</b><br>{detail}</div>"
 
 
-def dish_choices(t: dict) -> list[tuple[str, str]]:
-  return [(t["auto_detect"], AUTO_DETECT)] + [(n, n) for n in DISH_NAMES]
+ALL_CATEGORIES = "all"
+DISHES_BY_CATEGORY = {
+    c: [n for n in DISH_NAMES if dish_category(n) == c] for c in CATEGORIES
+}
+
+
+def category_choices(t: dict) -> list[tuple[str, str]]:
+  choices = [(f"{t['category_all']} ({len(DISH_NAMES)})", ALL_CATEGORIES)]
+  for c in CATEGORIES:
+    if DISHES_BY_CATEGORY[c]:
+      label = t["category_names"][c]
+      choices.append((f"{label} ({len(DISHES_BY_CATEGORY[c])})", c))
+  return choices
+
+
+def dish_choices(t: dict, category: str = ALL_CATEGORIES) -> list[tuple[str, str]]:
+  """Dropdown choices; the full list is grouped by type with a short prefix."""
+  if category == ALL_CATEGORIES:
+    dishes = [
+        (f"{t['category_short'][c]} · {n}", n)
+        for c in CATEGORIES
+        for n in DISHES_BY_CATEGORY[c]
+    ]
+  else:
+    dishes = [(n, n) for n in DISHES_BY_CATEGORY.get(category, [])]
+  return [(t["auto_detect"], AUTO_DETECT)] + dishes
+
+
+def filter_dishes(category, language, selected_dish):
+  choices = dish_choices(ui_text(language), category)
+  # Keep the current dish if it is still listed, otherwise reset.
+  if selected_dish not in {value for _, value in choices}:
+    selected_dish = AUTO_DETECT
+  return gr.update(choices=choices, value=selected_dish)
 
 
 # The prompts ask for no emoji, but the model still slips in symbols like
@@ -913,7 +991,7 @@ OUTPUT_PLACEHOLDERS = {
 }
 
 
-def translate_ui(language, recipe_md, shopping_md, nutrition_md):
+def translate_ui(language, category, recipe_md, shopping_md, nutrition_md):
   t = ui_text(language)
 
   def placeholder_update(current, key):
@@ -928,9 +1006,10 @@ def translate_ui(language, recipe_md, shopping_md, nutrition_md):
       gr.update(label=t["tab_text"]),
       gr.update(label=t["manual_label"], placeholder=t["manual_placeholder"]),
       gr.update(value=t["dish_header"]),
+      gr.update(label=t["category_label"], choices=category_choices(t)),
       gr.update(
           label=t["dish_label"].format(count=len(DISH_NAMES)),
-          choices=dish_choices(t),
+          choices=dish_choices(t, category),
       ),
       gr.update(
           label=t["style_label"], choices=list(zip(t["style_choices"], RECIPE_STYLES))
@@ -999,6 +1078,11 @@ with gr.Blocks(
           )
 
       dish_header = gr.Markdown(T["dish_header"], elem_classes="category-header")
+      category_selector = gr.Dropdown(
+          choices=category_choices(T),
+          value=ALL_CATEGORIES,
+          label=T["category_label"],
+      )
       dish_dropdown = gr.Dropdown(
           choices=dish_choices(T),
           value=AUTO_DETECT,
@@ -1075,7 +1159,13 @@ with gr.Blocks(
 
   language_selector.change(
       fn=translate_ui,
-      inputs=[language_selector, recipe_box, shopping_box, analysis_box],
+      inputs=[
+          language_selector,
+          category_selector,
+          recipe_box,
+          shopping_box,
+          analysis_box,
+      ],
       outputs=[
           hero_html,
           photos_tab,
@@ -1083,6 +1173,7 @@ with gr.Blocks(
           text_tab,
           manual_text_input,
           dish_header,
+          category_selector,
           dish_dropdown,
           style_selector,
           cravings_input,
@@ -1101,6 +1192,12 @@ with gr.Blocks(
           shopping_box,
           analysis_box,
       ],
+  )
+
+  category_selector.change(
+      fn=filter_dishes,
+      inputs=[category_selector, language_selector, dish_dropdown],
+      outputs=dish_dropdown,
   )
 
   print_recipe_btn.click(fn=None, js=print_js("ck-recipe-md"))
