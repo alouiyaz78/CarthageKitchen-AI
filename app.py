@@ -8,6 +8,7 @@ import gradio as gr
 import psycopg2
 from src.crew import (
     CLASSIC_STYLE,
+    COMPARISON_STYLE,
     MEAL_ANALYSIS_TASK,
     NUTRITION_TASK,
     RECIPE_STYLES,
@@ -160,7 +161,14 @@ UI_TEXT = {
             "Macros, calories and health tips.",
         ),
         "head_recipe": "Heritage Recipe",
-        "source_label": "Inspiration:",
+        "head_recipe_chef": "Contemporary Recipe Card",
+        "head_recipe_video": "Traditional Recipe & Chef Video",
+        "head_recipe_comparison": "Heritage vs Modern Comparison",
+        "video_variant": (
+            "**Video demonstration:** see how {name} does it — [{title}]({url})"
+            " (the video may be in Tunisian Arabic)"
+        ),
+        "chef_variant": "**Chef's recipe** — Source: {name}, [{title}]({url})",
         "head_shopping": "Shopping Guide & Local Markets",
         "head_nutrition": "Nutrition Report & Recommendations",
         "msg_missing_input": (
@@ -262,7 +270,14 @@ UI_TEXT = {
             "Macros, calories et conseils de santé.",
         ),
         "head_recipe": "Fiche recette patrimoniale",
-        "source_label": "Source d'inspiration :",
+        "head_recipe_chef": "Fiche recette contemporaine",
+        "head_recipe_video": "Recette traditionnelle et vidéo de chef",
+        "head_recipe_comparison": "Comparatif : Terroir vs Chefs",
+        "video_variant": (
+            "**Démonstration en vidéo :** découvrez la gestuelle de {name} —"
+            " [{title}]({url}) (la vidéo peut être en dialecte tunisien)"
+        ),
+        "chef_variant": "**Recette du chef** — Source : {name}, [{title}]({url})",
         "head_shopping": "Guide des courses et marchés locaux",
         "head_nutrition": "Bilan nutritionnel et recommandations",
         "msg_missing_input": (
@@ -341,15 +356,45 @@ def drop_preamble(text: str) -> str:
   return text[match.start():] if match else text
 
 
-# The model sometimes writes the video source label in the wrong language.
-SOURCE_LINE = re.compile(r"(?m)^\W*(Source d'inspiration|Inspiration)\s*:\W*(?=\[)")
+# The chef writes external sources as "VIDEO: channel | title | url" (or
+# CHEF: for a written recipe) and the sentence is built here, in the UI
+# language. Titles may contain "|", so the name is the first field and the
+# URL the last.
+SOURCE_LINE = re.compile(
+    r"(?m)^\W*(VIDEO|CHEF)[*_\s]*:[*_\s]*(.+?)\s*\|\s*(.+)\s*\|\s*<?(https?://[^\s>]+?)>?[*_.,;]*\s*$"
+)
 
 
-def fix_source_label(text: str, t: dict) -> str:
-  return SOURCE_LINE.sub(f"{t['source_label']} ", text)
+def render_source_lines(text: str, t: dict) -> str:
+  def render(match):
+    kind, name, title, url = match.groups()
+    title = title.strip().replace("[", "(").replace("]", ")")
+    key = "video_variant" if kind == "VIDEO" else "chef_variant"
+    line = t[key].format(name=name.strip(), title=title, url=url.rstrip(".,;"))
+    # Blank lines keep it out of a preceding list and its own paragraph.
+    return f"\n{line}\n"
+
+  return SOURCE_LINE.sub(render, text)
 
 
-def dispatch_outputs_to_tabs(crew_output, t: dict):
+def recipe_heading(text: str, t: dict, recipe_style: str) -> str:
+  """The recipe tab title, from the style and the source line the chef wrote.
+
+  The heritage title is reserved for the classic style. In chefs_variants a
+  VIDEO line means the heritage recipe with a video to watch; anything else,
+  including a missing or malformed CHEF line, gets the contemporary title.
+  """
+  if recipe_style == COMPARISON_STYLE:
+    return t["head_recipe_comparison"]
+  if recipe_style == CLASSIC_STYLE:
+    return t["head_recipe"]
+  kinds = {m.group(1) for m in SOURCE_LINE.finditer(text)}
+  if "VIDEO" in kinds and "CHEF" not in kinds:
+    return t["head_recipe_video"]
+  return t["head_recipe_chef"]
+
+
+def dispatch_outputs_to_tabs(crew_output, t: dict, recipe_style: str):
   """Split the crew output into the recipe, shopping and nutrition tabs.
 
   Outputs are matched by task name, since the number of tasks that run
@@ -369,10 +414,11 @@ def dispatch_outputs_to_tabs(crew_output, t: dict):
 
   if RECIPE_TASK not in outputs:
     raw = getattr(crew_output, "raw", "") or t["msg_no_output"]
-    return f"## {t['head_recipe']}\n\n{raw}", "", ""
+    return f"## {recipe_heading(raw, t, recipe_style)}\n\n{raw}", "", ""
 
+  recipe = drop_preamble(outputs[RECIPE_TASK])
   return (
-      f"## {t['head_recipe']}\n\n{fix_source_label(drop_preamble(outputs[RECIPE_TASK]), t)}",
+      f"## {recipe_heading(recipe, t, recipe_style)}\n\n{render_source_lines(recipe, t)}",
       f"## {t['head_shopping']}\n\n{outputs.get(SOURCING_TASK, '')}",
       f"## {t['head_nutrition']}\n\n{outputs.get(NUTRITION_TASK, '')}",
   )
@@ -444,7 +490,7 @@ def run_pipeline(
     )
   try:
     recipe_md, shopping_md, nutrition_md = dispatch_outputs_to_tabs(
-        crew_builder.crew().kickoff(inputs=inputs), t
+        crew_builder.crew().kickoff(inputs=inputs), t, recipe_style
     )
     if web_fallback and workflow_type == "recipe":
       recipe_md = f"{t['msg_web_unavailable']}\n\n{recipe_md}"

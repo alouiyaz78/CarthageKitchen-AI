@@ -30,8 +30,9 @@ suggest_heritage_recipe_task:
     Reference recipe for the requested dish, taken from the heritage database:
     {heritage_recipe}
 
-    If a dish is requested (anything other than "None"), prepare exactly that dish.
-    Base it on the reference recipe above and do not switch to another dish.
+    If a dish is requested (anything other than "None"), prepare exactly that dish and do not switch to another
+    dish. Base it on the reference recipe above, unless the chef style below gives you a qualifying written
+    recipe of the same dish.
     If the reference recipe is "None", call `search_tunisian_recipes_tool` with the dish name to find it.
     Use the available pantry ingredients where they fit and list everything else as add-ons.
     If the dish conflicts with the dietary restrictions, adapt it and say what you changed.
@@ -45,66 +46,38 @@ suggest_heritage_recipe_task:
     Recipe style chosen by the user: {recipe_style}
 
     If the style is "classic": base the recipe strictly on the heritage database (the reference recipe above or the
-    search tool). Do not search the web.
+    search tool). Do not search the web and do not include any external link.
 
-    If the style is "chefs_variants" or "comparison", this step is mandatory before you write anything:
-    call the `search_tunisian_chef_videos` tool exactly twice.
-    Dish titles in the heritage database often use old or unusual transliterations (e.g., "Kalmars Mihchi",
-    "Gnaoüiya", "Marquit Jilbana"). Never paste a rare spelling word for word into a query. First work out the
-    name people use today: the main ingredient and method in plain French (e.g., "calmars farcis", "ragoût de
-    gombos"), and the common Tunisian spellings (e.g., "kalamar mahchi" or "mehchi", "gnaouia"). Combine them
-    with OR, and always include "tunisien" or "tunisienne" so that Moroccan or Algerian versions are left out:
-    1. site:youtube.com ("Teyssir" OR "Hendati" OR "Wafik" OR "Chef") (<French name> OR <Tunisian spelling>) tunisien
-    2. site:youtube.com "cuisine tunisienne" (<French name> OR <Tunisian spelling> OR <other spelling>)
-    For example, for "Calmars Farcis / Kalmars Mihchi":
-    1. site:youtube.com ("Teyssir" OR "Hendati" OR "Wafik" OR "Chef") ("calmars farcis" OR "kalamar mahchi") tunisien
-    2. site:youtube.com "cuisine tunisienne" ("calamar farci" OR "kalamar mehchi" OR "calmars farcis")
-    Skip any video about a Moroccan, Algerian or other non-Tunisian version.
-    Chef Teyssir Ksouri and Chef Hendati are preferred, but any credible Tunisian chef or cooking channel counts.
-    Pick the most relevant video and copy its title, its Channel and its URL exactly as the tool returns them;
-    never build or guess a URL. Credit the video to its Channel. Name a chef only if the Channel or the title
-    names them; ignore names that appear only in snippets, they usually belong to other videos. YouTube descriptions rarely contain the full method, and that is
-    expected: never report a failed search and never say the results lacked detailed recipes. Build the steps on
-    the heritage database reference, then add the chef's signature touches (taklia, seasoning, plating) shown in
-    the video title or snippet. Present only those touches as the chef's; do not credit the chef with details
-    that are not in the results.
-    End the recipe card with the source as a markdown link on its own line, not in bold, for example:
-    in English: Inspiration: [Cuisine Tunisienne Chef Hendati - Mloukhia Tunisienne](https://www.youtube.com/watch?v=...)
-    in French: Source d'inspiration : [Cuisine Tunisienne Chef Hendati - Mloukhia Tunisienne](https://www.youtube.com/watch?v=...)
-    Never write about the search itself or its results anywhere in the card.
-    - chefs_variants: write the recipe as inspired by that video and name its chef or channel in the context sentence.
-    - comparison: write the classic heritage recipe, then end with a section titled "Modern chef's take"
-      (in French: "La version du chef moderne"): 1 to 4 short bullets, one per difference actually stated in the
-      video title or snippet (equipment, ingredient, technique, plating). Do not pad with general praise or guesses:
-      if the results show a single difference, write a single bullet. This section is 80 words at most and does
-      not count toward the 350-word limit.
-    If neither search returns any Tunisian cooking video, silently write the classic recipe, with no disclaimer.
-    If the style is not classic but no web search tool is available to you, write the classic recipe.
+    If the style is "chefs_variants" or "comparison", call `find_tunisian_chef_versions` once before you write
+    anything. Dish titles in the heritage database often use old or unusual transliterations (e.g.,
+    "Kalmars Mihchi", "Gnaoüiya", "Marquit Jilbana"). Never pass a rare spelling as is. First work out the names
+    people use today: the plain French name (e.g., "calmars farcis", "ragoût de gombos") and one or two common
+    Tunisian spellings (e.g., "kalamar mahchi", "gnaouia"). Keep every word that makes it a different dish,
+    such as couscous, riz or tajine. Pass them comma-separated, French name first.
+    The tool returns WRITTEN RECIPES and VIDEOS. Decide in this exact order:
 
-    Format it as a compact recipe card read on a screen, 350 words at most:
-    - The dish name as a heading, then one sentence of heritage context that presents the dish as Tunisian
-      and, for a tajine, a couscous or slata mechouia, says what sets the Tunisian version apart. For a tajine,
-      always state that it is baked in the oven and is not a stew simmered in a conical pot as in Morocco.
-    - One line with servings, prep time and cook time.
-    - Ingredients as short bullets with quantities. If the user provided ingredients, split them into two groups;
-      otherwise give one single list. Group titles:
-      when writing in English, "You already have" and "To add", or "Ingredients" for a single list;
-      when writing in French, "Déjà dans votre cuisine" and "À ajouter", or "Ingrédients" for a single list.
-    - Steps as a numbered list, one or two short sentences each, 10 steps at most.
-    - At most 2 chef tips, one line each. If you adapted the dish to the dietary restrictions, say so in one line.
-    No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
+    1. Written recipe first. The tool returns at most one, always by a qualified Tunisian author/chef.
+    It qualifies if it is the same dish as the requested one, is Tunisian, and respects authentic culinary codes.
+    If it qualifies:
+    - In "chefs_variants": it replaces the heritage reference as the source of the card (its ingredients, quantities, steps).
+      Add a second sentence in the introduction explaining what characterizes this version (spices, technique) based strictly on its text.
+      End with: CHEF: <Credit> | <Title> | <URL>
+    - In "comparison": provide the heritage recipe steps, then add a section "Ce que change le chef" comparing verifiable differences
+      (spices, quantities, cooking vessel) visible in both texts. End with: CHEF: <Credit> | <Title> | <URL>
 
-    Write the whole answer in {language}, including headings, and translate your identity notes into {language}
-    rather than copying English words. Keep Tunisian dish names in their vernacular form.
-    Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
+    2. Video fallback (only if no written recipe qualifies):
+    Do not guess or hallucinate ingredients or techniques not present in the reference recipe.
+    - In "chefs_variants": present the heritage recipe method accurately, followed by the VIDEO line.
+    - In "comparison": present the heritage recipe. Add a section titled "Complément vidéo" stating plainly:
+      "Aucune recette écrite alternative n'étant documentée pour ce plat, la méthode patrimoniale fait foi. La vidéo ci-dessous permet d'observer la gestuelle et le dressage du chef en cuisine."
+      Followed immediately by: VIDEO: <Channel> | <Title> | <URL>
 
-    CRITICAL OUTPUT RULE: never start with operational commentary, search status or procedural thoughts
-    (e.g., "The search did not return...", "I will now present..."). Line 1 MUST be the recipe title as a
-    markdown heading. If the search yields no video, silently produce the heritage recipe without any disclaimer.
+    3. If nothing qualifies, write the heritage recipe without disclaimer or external links.
+    Never write both a CHEF and a VIDEO line. Line 1 MUST be the dish name as a markdown heading.
   expected_output: >
-    A compact recipe card of 350 words at most: dish name, one-sentence context, servings and times,
-    ingredients split into pantry and add-ons, numbered steps, up to 2 tips. In chefs_variants and comparison
-    styles it shows a linked YouTube inspiration line; comparison ends with a short "Modern chef's take" section.
+    A compact recipe card of 350 words at most: dish name as heading, context sentence, servings and times,
+    ingredients, numbered steps, up to 2 tips. Ends with a CHEF line (if written recipe) or VIDEO line (if fallback).
+    In comparison style, includes either "Ce que change le chef" (real differences) or "Complément vidéo" (visual reference).
   agent: recipe_suggestion_agent
 
 source_ingredients_task:

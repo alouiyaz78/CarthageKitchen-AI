@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
 from src.tools import (
-    ChefVideoSearchTool,
+    ChefSearchTool,
     extract_ingredients_from_image_and_text,
     filter_based_on_dietary_restrictions,
     filter_ingredients_list,
@@ -53,7 +53,7 @@ if not api_key:
 
 os.environ["ANTHROPIC_API_KEY"] = api_key
 
-# Web search for modern chef variants. ChefVideoSearchTool reads the key from the
+# Web search for modern chef variants. ChefSearchTool reads the key from the
 # environment, so copy it there when it only comes from the .env file.
 serper_key = (
     config.serper_api_key.get_secret_value()
@@ -66,7 +66,8 @@ WEB_SEARCH_AVAILABLE = bool(serper_key)
 
 # recipe_style values sent by app.py. Only "classic" runs without web search.
 CLASSIC_STYLE = "classic"
-RECIPE_STYLES = [CLASSIC_STYLE, "chefs_variants", "comparison"]
+COMPARISON_STYLE = "comparison"
+RECIPE_STYLES = [CLASSIC_STYLE, "chefs_variants", COMPARISON_STYLE]
 
 llm = LLM(
     model="anthropic/claude-haiku-4-5-20251001",
@@ -108,10 +109,10 @@ def make_task(name: str, agent: Agent, context=None) -> Task:
   return Task(config=TASKS_CONFIG[name], name=name, agent=agent, **kwargs)
 
 
-def web_search_tool() -> ChefVideoSearchTool:
-  # A fresh tool per crew, since the usage count lives on the instance. Two
-  # searches at most keeps the chef variants mode close to classic speed.
-  return ChefVideoSearchTool(max_usage_count=2)
+def web_search_tool() -> ChefSearchTool:
+  # A fresh tool per crew, since the usage count lives on the instance. The
+  # tool runs all its queries itself, so one call is enough.
+  return ChefSearchTool(max_usage_count=1)
 
 
 class NourishBotRecipeCrew:
