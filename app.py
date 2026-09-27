@@ -88,7 +88,7 @@ UI_TEXT = {
         "style_label": "Recipe style",
         "style_choices": [
             "Classic Heritage (Books & Neon RAG)",
-            "Modern Chefs & Creators (Web Search: Taysir, Hindati...)",
+            "Modern Chefs & Creators (YouTube: Teyssir, Hendati...)",
             "Heritage vs Modern Comparison",
         ],
         "msg_web_unavailable": (
@@ -167,7 +167,7 @@ UI_TEXT = {
         "style_label": "Style de recette",
         "style_choices": [
             "Patrimoine classique (livres et base Neon)",
-            "Chefs et créateurs modernes (recherche web : Taysir, Hindati...)",
+            "Chefs et créateurs modernes (YouTube : Teyssir, Hendati...)",
             "Comparaison patrimoine / moderne",
         ],
         "msg_web_unavailable": (

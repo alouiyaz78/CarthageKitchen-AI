@@ -1,13 +1,17 @@
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 from pathlib import Path
+import re
 from typing import List, Union
-from crewai.tools import tool
+from crewai.tools import BaseTool, tool
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
 from litellm import completion
 import psycopg2
+from pydantic import BaseModel, Field
+import requests
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
@@ -206,6 +210,89 @@ def search_tunisian_recipes_tool(query: str) -> str:
       format_recipe(row[0], row[1], row[2], row[3], score=row[4])
       for row in rows
   )
+
+
+YOUTUBE_VIDEO_URL = re.compile(
+    r"^https?://(www\.|m\.)?(youtube\.com/(watch|shorts/)|youtu\.be/)"
+)
+
+
+def youtube_channel(url: str) -> str | None:
+  """Return the channel that published a video, or None if it is unavailable."""
+  try:
+    resp = requests.get(
+        "https://www.youtube.com/oembed",
+        params={"url": url, "format": "json"},
+        timeout=4,
+    )
+    if resp.ok:
+      return resp.json().get("author_name")
+  except requests.RequestException:
+    pass
+  return None
+
+
+class ChefVideoSearchInput(BaseModel):
+  query: str = Field(description="Google search query for YouTube videos.")
+
+
+class ChefVideoSearchTool(BaseTool):
+  """Serper search limited to YouTube videos, with the real channel name.
+
+  Serper snippets for YouTube pages mix in names from the recommended videos
+  sidebar, so the channel is looked up with YouTube oEmbed instead.
+  """
+
+  name: str = "search_tunisian_chef_videos"
+  description: str = (
+      "Search YouTube videos of Tunisian chefs. For each video, returns its"
+      " title, the channel that published it, its URL and a search snippet."
+  )
+  args_schema: type[BaseModel] = ChefVideoSearchInput
+
+  def _run(self, query: str) -> str:
+    # Keep Moroccan and Algerian versions of the same dish out of the results.
+    if "tunis" not in query.lower():
+      query = f"{query} tunisien"
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+      return "Error: SERPER_API_KEY is missing."
+    try:
+      resp = requests.post(
+          "https://google.serper.dev/search",
+          headers={"X-API-KEY": api_key},
+          json={"q": query, "num": 5},
+          timeout=10,
+      )
+      resp.raise_for_status()
+    except requests.RequestException as e:
+      logging.error(f"Serper search failed: {e}")
+      return f"Error: web search failed ({e})."
+
+    videos = [
+        r
+        for r in resp.json().get("organic", [])
+        if YOUTUBE_VIDEO_URL.match(r.get("link", ""))
+    ]
+    with ThreadPoolExecutor(max_workers=5) as pool:
+      channels = list(pool.map(youtube_channel, [v["link"] for v in videos]))
+
+    # Videos that oEmbed cannot resolve are private or removed: skip them.
+    lines = [
+        f"- Title: {v.get('title', '')}\n"
+        f"  Channel: {channel}\n"
+        f"  URL: {v['link']}\n"
+        f"  Snippet: {v.get('snippet', '')}"
+        for v, channel in zip(videos, channels)
+        if channel
+    ]
+    if not lines:
+      return "No YouTube video found for this query."
+    return (
+        "The Channel line is the real publisher of each video. Names inside"
+        " snippets often belong to other recommended videos.\n"
+        + "\n".join(lines)
+    )
 
 
 def format_recipe(dish_name, page, ingredients, instructions, score=None) -> str:

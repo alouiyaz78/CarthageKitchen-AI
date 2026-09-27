@@ -3,13 +3,13 @@
 
 # App
 crewai==1.15.22
-crewai-tools==1.15.22
 gradio==6.28.0
 litellm==1.53.3
 pydantic==2.12.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
 pyyaml==6.0.3
+requests==2.34.2
 
 # RAG store (Neon Postgres + pgvector)
 fastembed==0.8.1

@@ -25,7 +25,7 @@ ruff check .                  # ruff is pinned in requirements.txt
 The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls back to the root `.env`. `src/tools.py`, `app.py`, and the ingestion scripts only read the root `.env`.
 
 - `ANTHROPIC_API_KEY`: required. `src/crew.py` raises an error at import time if it is missing.
-- `SERPER_API_KEY`: optional. Enables web search (crewai-tools `SerperDevTool`) for the modern chef recipe styles. Without it, those styles fall back to the classic recipe with a notice.
+- `SERPER_API_KEY`: optional. Enables the YouTube chef search (`ChefVideoSearchTool` in `src/tools.py`) for the modern chef recipe styles. Without it, those styles fall back to the classic recipe with a notice.
 - `DATABASE_URL`: Neon Postgres with pgvector. Without it, the dish dropdown shows only "Auto-detect" and the RAG tool returns an error string.
 - `VISION_MODEL`: optional. Sets the model used for image ingredient extraction in `src/tools.py`.
 - `MODEL_NAME` appears in the README but is **ignored**. The crew LLM is hardcoded in `src/crew.py` (`anthropic/claude-haiku-4-5-20251001`, temperature 0.2).
@@ -41,7 +41,7 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 
 **Selected dish.** When the user picks a dish, `app.py` fetches it by exact name with `get_recipe_by_name()` (`src/tools.py`) and passes it as `heritage_recipe`. The chef task is told to cook exactly that dish from that reference instead of running the semantic search.
 
-**Recipe style.** In `classic` style the chef only has the Neon RAG tool. In `chefs_variants` and `comparison` it also gets `SerperDevTool` (5 results, 2 searches at most), and the recipe task makes the search mandatory. Serper only returns titles and short snippets, so chef-specific details are often missing, and the model tends to fill the gap with generic claims attributed to the chef.
+**Recipe style.** In `classic` style the chef only has the Neon RAG tool. In `chefs_variants` and `comparison` it also gets `ChefVideoSearchTool` (2 searches at most, one new instance per crew because the usage count lives on the instance). The recipe task makes it run two fixed `site:youtube.com` queries and cite the chosen video as a markdown link at the end of the card. The tool calls Serper, keeps YouTube video links, and looks up each video's real channel with YouTube oEmbed: Serper snippets for YouTube pages contain names from the recommended videos sidebar, which led the model to credit the wrong chef. Videos that oEmbed cannot resolve are dropped, so cited links exist. The tool appends "tunisien" to any query that does not mention Tunisia, to keep Moroccan and Algerian versions out. Snippets rarely describe the method, so the steps come from the heritage recipe and the model can still pad the chef's touches with generic claims.
 
 **UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `NUTRITION_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`. It also strips emoji from the LLM output.
 

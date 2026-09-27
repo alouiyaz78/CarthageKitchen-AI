@@ -48,19 +48,31 @@ suggest_heritage_recipe_task:
     search tool). Do not search the web.
 
     If the style is "chefs_variants" or "comparison", this step is mandatory before you write anything:
-    call the "Search the internet with Serper" tool, at most twice, to find how a modern Tunisian chef or creator
-    prepares this dish. Good queries are "<dish name> Teyssir Ksouri" (Chef Teyssir Ksouri, also spelled Taysir)
-    and "<dish name> recette chef tunisien" or "<dish name> Hindati". Any Tunisian chef or creator named in the
-    results counts. Attribute to a chef only the details found in a result that names that chef, and give that
-    result's link. Never combine details from different results into one chef's version. If the result naming
-    the chef gives no recipe details, say only that the chef has a version, with the link.
-    - chefs_variants: write that chef's version of the dish. Name the chef in the context sentence and keep the
-      specifics the results mention (marinade, tour de main, taklia). If the results name no chef or give no usable
-      detail, write one short line saying no modern chef version was found, then the classic recipe.
-    - comparison: write the classic heritage recipe, then always end with a section titled "Modern chef's take"
-      (in French: "La version du chef moderne"): at most 4 bullets on how the named chef adjusts the dish, with the
-      source link. This section is 120 words at most and does not count toward the 350-word limit. If the results
-      name no chef or give no usable detail, keep the section and say so in one line.
+    call the `search_tunisian_chef_videos` tool exactly twice, with these two queries. Replace <dish> with the
+    short common name of the dish followed by "tunisien" or "tunisienne", such as "tajine tunisien",
+    "couscous tunisien" or "slata mechouia tunisienne", so that Moroccan or Algerian versions are left out:
+    1. site:youtube.com ("Teyssir" OR "Hendati" OR "Wafik" OR "Chef") <dish>
+    2. site:youtube.com "cuisine tunisienne" <dish>
+    Skip any video about a Moroccan, Algerian or other non-Tunisian version.
+    Chef Teyssir Ksouri and Chef Hendati are preferred, but any credible Tunisian chef or cooking channel counts.
+    Pick the most relevant video and copy its title, its Channel and its URL exactly as the tool returns them;
+    never build or guess a URL. Credit the video to its Channel. Name a chef only if the Channel or the title
+    names them; ignore names that appear only in snippets, they usually belong to other videos. YouTube descriptions rarely contain the full method, and that is
+    expected: never report a failed search and never say the results lacked detailed recipes. Build the steps on
+    the heritage database reference, then add the chef's signature touches (taklia, seasoning, plating) shown in
+    the video title or snippet. Present only those touches as the chef's; do not credit the chef with details
+    that are not in the results.
+    End the recipe card with the source as a markdown link on its own line, not in bold, for example:
+    in English: Inspiration: [Cuisine Tunisienne Chef Hendati - Mloukhia Tunisienne](https://www.youtube.com/watch?v=...)
+    in French: Source d'inspiration : [Cuisine Tunisienne Chef Hendati - Mloukhia Tunisienne](https://www.youtube.com/watch?v=...)
+    Never write about the search itself or its results anywhere in the card.
+    - chefs_variants: write the recipe as inspired by that video and name its chef or channel in the context sentence.
+    - comparison: write the classic heritage recipe, then end with a section titled "Modern chef's take"
+      (in French: "La version du chef moderne"): 1 to 4 short bullets, one per difference actually stated in the
+      video title or snippet (equipment, ingredient, technique, plating). Do not pad with general praise or guesses:
+      if the results show a single difference, write a single bullet. This section is 80 words at most and does
+      not count toward the 350-word limit.
+    If neither search returns any Tunisian cooking video, write the classic recipe without mentioning the search.
     If the style is not classic but no web search tool is available to you, write the classic recipe.
 
     Format it as a compact recipe card read on a screen, 350 words at most:
@@ -78,8 +90,8 @@ suggest_heritage_recipe_task:
     Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A compact recipe card of 350 words at most: dish name, one-sentence context, servings and times,
-    ingredients split into pantry and add-ons, numbered steps, up to 2 tips. In chefs_variants style the recipe
-    is the named chef's version; in comparison style it ends with a short "Modern chef's take" section.
+    ingredients split into pantry and add-ons, numbered steps, up to 2 tips. In chefs_variants and comparison
+    styles it shows a linked YouTube inspiration line; comparison ends with a short "Modern chef's take" section.
   agent: recipe_suggestion_agent
 
 source_ingredients_task:

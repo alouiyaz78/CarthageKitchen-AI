@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
 from crewai import LLM, Agent, Crew, Process, Task
-from crewai_tools import SerperDevTool
 from dotenv import load_dotenv
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
 from src.tools import (
+    ChefVideoSearchTool,
     extract_ingredients_from_image_and_text,
     filter_based_on_dietary_restrictions,
     filter_ingredients_list,
@@ -53,7 +53,7 @@ if not api_key:
 
 os.environ["ANTHROPIC_API_KEY"] = api_key
 
-# Web search for modern chef variants. SerperDevTool reads the key from the
+# Web search for modern chef variants. ChefVideoSearchTool reads the key from the
 # environment, so copy it there when it only comes from the .env file.
 serper_key = (
     config.serper_api_key.get_secret_value()
@@ -108,9 +108,10 @@ def make_task(name: str, agent: Agent, context=None) -> Task:
   return Task(config=TASKS_CONFIG[name], name=name, agent=agent, **kwargs)
 
 
-def web_search_tool() -> SerperDevTool:
-  # Two searches at most keeps the chef variants mode close to classic speed.
-  return SerperDevTool(n_results=5, max_usage_count=2)
+def web_search_tool() -> ChefVideoSearchTool:
+  # A fresh tool per crew, since the usage count lives on the instance. Two
+  # searches at most keeps the chef variants mode close to classic speed.
+  return ChefVideoSearchTool(max_usage_count=2)
 
 
 class NourishBotRecipeCrew:
