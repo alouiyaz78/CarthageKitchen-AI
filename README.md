@@ -13,7 +13,7 @@ license: mit
 
 # 🇹🇳 CarthageKitchen-AI — Autonomous Culinary Studio & Health Coach
 
-CarthageKitchen-AI is a multi-agent culinary and clinical nutrition platform designed to bridge authentic Tunisian gastronomy with modern dietary management and localized grocery sourcing in Canada (**Ottawa/Gatineau** and **Montreal**).
+CarthageKitchen-AI is a multi-agent culinary and clinical nutrition platform designed to bridge authentic Tunisian gastronomy with modern dietary management and localized grocery sourcing in Canada (**Ottawa/Gatineau**, **Montreal** and **Quebec City**).
 
 The platform accepts photos of pantry/fridge items or dish images, detects ingredients, respects clinical restrictions, suggests authentic recipes with cultural precision (e.g., the *taklia*, frying the spices and tomato paste in oil), maps out local specialty grocers, and delivers detailed metabolic diagnostics.
 
@@ -23,7 +23,7 @@ The platform accepts photos of pantry/fridge items or dish images, detects ingre
 
 - **Multimodal Ingredient & Meal Parsing:** Processes uploaded images (fridge, countertop, or prepared dishes) alongside free-form text ingredients.
 - **Cultural Culinary Grounding:** Preserves authentic Tunisian flavor profiles, caraway-to-coriander ratios, and healthier contemporary techniques (e.g., roasted variations of traditional classics).
-- **Localized Specialty Sourcing:** Suggests verified Mediterranean and Middle Eastern markets across Ottawa/Gatineau and Montreal for hard-to-find ingredients, paired with common supermarket alternatives.
+- **Localized Specialty Sourcing:** Suggests verified Mediterranean and Middle Eastern markets across Ottawa/Gatineau, Montreal and Quebec City for hard-to-find ingredients, paired with common supermarket alternatives.
 - **Clinical & Metabolic Profiling:** Estimates calorie load, portion sizing, macronutrient splits, glycemic considerations, and sodium levels.
 - **Provider-Agnostic LLM Routing:** Built for flexible deployment supporting free-tier inference (e.g., Google Gemini Flash, Groq) or Bring-Your-Own-Key (BYOK) for proprietary models.
 - **Printable Recipe Cards:** Clean, dedicated print stylesheets optimized for direct browser printing and PDF generation without UI clutter.

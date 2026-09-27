@@ -65,15 +65,15 @@ DIETARY_PROFILES = [
     "Diabetic / Low Glycemic",
     "Low Sodium (Hypertension)",
 ]
-CITIES = ["Ottawa / Gatineau", "Montreal"]
+CITIES = ["Ottawa / Gatineau", "Montreal", "Quebec City"]
 
 UI_TEXT = {
     "en": {
         "tagline": "Tunisian Culinary Studio &amp; Nutrition",
         "subtitle": (
             "Authentic heritage recipes, local sourcing in"
-            " <b>Ottawa/Gatineau</b> and <b>Montreal</b>, and a full dietary"
-            " assessment."
+            " <b>Ottawa/Gatineau</b>, <b>Montreal</b> and <b>Quebec City</b>,"
+            " and a full dietary assessment."
         ),
         "tab_photos": "Ingredient Photos",
         "tab_text": "Ingredients Input",
@@ -109,7 +109,11 @@ UI_TEXT = {
         "allergies_label": "Allergies and exclusions",
         "allergies_placeholder": "e.g. no coriander, very mild chili...",
         "city_label": "Sourcing city",
-        "city_choices": ["Ottawa / Gatineau", "Montreal"],
+        "city_choices": [
+            "Ottawa / Gatineau",
+            "Montreal (Greater Montreal)",
+            "Quebec City",
+        ],
         "mode_label": "Mode",
         "mode_recipe": "Full culinary studio",
         "mode_analysis": "Dietary analysis only",
@@ -125,7 +129,7 @@ UI_TEXT = {
         ),
         "ph_shopping": (
             "Your shopping list and local stores will appear here.",
-            "Recommended grocers in Ottawa/Gatineau and Montreal.",
+            "Recommended grocers in Ottawa/Gatineau, Montreal and Quebec City.",
         ),
         "ph_nutrition": (
             "Your nutrition report will appear here.",
@@ -147,7 +151,7 @@ UI_TEXT = {
         "tagline": "Studio Culinaire Tunisien &amp; Nutrition",
         "subtitle": (
             "Recettes patrimoniales authentiques, approvisionnement local à"
-            " <b>Ottawa/Gatineau</b> et <b>Montréal</b>, et évaluation"
+            " <b>Ottawa/Gatineau</b>, <b>Montréal</b> et <b>Québec</b>, et évaluation"
             " diététique complète."
         ),
         "tab_photos": "Photos des ingrédients",
@@ -184,7 +188,11 @@ UI_TEXT = {
         "allergies_label": "Allergies et exclusions",
         "allergies_placeholder": "Ex : sans coriandre, piment très doux...",
         "city_label": "Ville de sourcing",
-        "city_choices": ["Ottawa / Gatineau", "Montréal"],
+        "city_choices": [
+            "Ottawa / Gatineau",
+            "Montréal (Grand Montréal)",
+            "Québec (Ville de Québec)",
+        ],
         "mode_label": "Mode",
         "mode_recipe": "Studio culinaire complet",
         "mode_analysis": "Analyse diététique seule",
@@ -200,7 +208,7 @@ UI_TEXT = {
         ),
         "ph_shopping": (
             "La liste des courses et les adresses locales s'afficheront ici.",
-            "Épiceries recommandées à Ottawa/Gatineau et Montréal.",
+            "Épiceries recommandées à Ottawa/Gatineau, Montréal et Québec.",
         ),
         "ph_nutrition": (
             "Le bilan nutritionnel s'affichera ici.",

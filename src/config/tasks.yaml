@@ -85,9 +85,16 @@ suggest_heritage_recipe_task:
 source_ingredients_task:
   description: >
     Review all ingredients and add-ons required by the suggested recipe.
-    For city: {target_city} (e.g., Ottawa/Gatineau or Montreal), identify items requiring special sourcing 
+    For city: {target_city}, identify items requiring special sourcing
     (tabel, harissa arbi, semoule grain moyen, fresh seafood, specific cuts of lamb or beef).
-    Provide exact specialty grocers (e.g., Jasmine Market, Mid-East Food Centre, Marché Adonis) and immediate supermarket equivalents.
+    Provide exact specialty grocers and immediate supermarket equivalents. Local landmarks by city:
+    - Ottawa / Gatineau: Mediterranean and Middle Eastern markets such as Mid-East Food Centre (Ottawa),
+      Marché Adonis (Gatineau and Ottawa), Jasmine Market, and local halal butchers.
+    - Montreal: the Petit Maghreb on Rue Jean-Talon Est, Marché Adonis, Akhavan, and neighborhood halal
+      butchers and markets.
+    - Quebec City: Le Petit Maghreb in Limoilou (halal butcher and Maghrebi grocery), Épicerie Saveurs du Monde
+      in Saint-Roch, and Maxi or Super C for the basics.
+    Recommend only stores in {target_city}. Never invent a store name or an address.
 
     Format it as a practical shopping list read on a screen, 250 words at most:
     - One markdown table with the columns: ingredient, where to buy it in {target_city}, supermarket substitute.
