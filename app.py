@@ -160,6 +160,7 @@ UI_TEXT = {
             "Macros, calories and health tips.",
         ),
         "head_recipe": "Heritage Recipe",
+        "source_label": "Inspiration:",
         "head_shopping": "Shopping Guide & Local Markets",
         "head_nutrition": "Nutrition Report & Recommendations",
         "msg_missing_input": (
@@ -261,6 +262,7 @@ UI_TEXT = {
             "Macros, calories et conseils de santé.",
         ),
         "head_recipe": "Fiche recette patrimoniale",
+        "source_label": "Source d'inspiration :",
         "head_shopping": "Guide des courses et marchés locaux",
         "head_nutrition": "Bilan nutritionnel et recommandations",
         "msg_missing_input": (
@@ -333,6 +335,20 @@ def strip_emoji(text: str) -> str:
   return EMOJI_PATTERN.sub("", text)
 
 
+def drop_preamble(text: str) -> str:
+  """Drop anything the model writes before the first markdown heading."""
+  match = re.search(r"(?m)^#", text)
+  return text[match.start():] if match else text
+
+
+# The model sometimes writes the video source label in the wrong language.
+SOURCE_LINE = re.compile(r"(?m)^\W*(Source d'inspiration|Inspiration)\s*:\W*(?=\[)")
+
+
+def fix_source_label(text: str, t: dict) -> str:
+  return SOURCE_LINE.sub(f"{t['source_label']} ", text)
+
+
 def dispatch_outputs_to_tabs(crew_output, t: dict):
   """Split the crew output into the recipe, shopping and nutrition tabs.
 
@@ -356,7 +372,7 @@ def dispatch_outputs_to_tabs(crew_output, t: dict):
     return f"## {t['head_recipe']}\n\n{raw}", "", ""
 
   return (
-      f"## {t['head_recipe']}\n\n{outputs[RECIPE_TASK]}",
+      f"## {t['head_recipe']}\n\n{fix_source_label(drop_preamble(outputs[RECIPE_TASK]), t)}",
       f"## {t['head_shopping']}\n\n{outputs.get(SOURCING_TASK, '')}",
       f"## {t['head_nutrition']}\n\n{outputs.get(NUTRITION_TASK, '')}",
   )
