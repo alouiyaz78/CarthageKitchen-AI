@@ -76,7 +76,9 @@ suggest_heritage_recipe_task:
     If the style is not classic but no web search tool is available to you, write the classic recipe.
 
     Format it as a compact recipe card read on a screen, 350 words at most:
-    - The dish name as a heading, then one sentence of heritage context.
+    - The dish name as a heading, then one sentence of heritage context that presents the dish as Tunisian
+      and, for a tajine, a couscous or slata mechouia, says what sets the Tunisian version apart. For a tajine,
+      always state that it is baked in the oven and is not a stew simmered in a conical pot as in Morocco.
     - One line with servings, prep time and cook time.
     - Ingredients as short bullets with quantities. If the user provided ingredients, split them into two groups;
       otherwise give one single list. Group titles:
@@ -86,8 +88,9 @@ suggest_heritage_recipe_task:
     - At most 2 chef tips, one line each. If you adapted the dish to the dietary restrictions, say so in one line.
     No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
 
-    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
-    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
+    Write the whole answer in {language}, including headings, and translate your identity notes into {language}
+    rather than copying English words. Keep Tunisian dish names in their vernacular form.
+    Start directly with the dish heading: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
   expected_output: >
     A compact recipe card of 350 words at most: dish name, one-sentence context, servings and times,
     ingredients split into pantry and add-ons, numbered steps, up to 2 tips. In chefs_variants and comparison
