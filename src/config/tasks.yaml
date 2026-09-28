@@ -96,6 +96,8 @@ source_ingredients_task:
       butchers and markets.
     - Quebec City: Le Petit Maghreb in Limoilou (halal butcher and Maghrebi grocery), Épicerie Saveurs du Monde
       in Saint-Roch, and Maxi or Super C for the basics.
+    - Toronto: Marché Adonis (Scarborough and Mississauga), Arz Fine Foods (Scarborough), Iqbal Foods
+      (Thorncliffe Park) for halal meat and spices, and FreshCo or No Frills for the supermarket equivalents.
     Recommend only stores in {target_city}. Never invent a store name or an address.
 
     Format it as a practical shopping list read on a screen, 250 words at most:

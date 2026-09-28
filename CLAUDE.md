@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CarthageKitchen AI (repo/package name: NourishBot) is a Gradio app. The README front-matter is set up for a Hugging Face Space, but the project is still in testing and has not been deployed yet. It uses a CrewAI multi-agent pipeline to turn pantry photos or typed ingredients into authentic Tunisian recipes. It also produces a local grocery sourcing guide (Ottawa/Gatineau, Montreal, Quebec City) and a nutrition analysis. Recipe suggestions draw on a RAG store built from scanned Tunisian cookbooks.
+CarthageKitchen AI (repo/package name: NourishBot) is a Gradio app. The README front-matter is set up for a Hugging Face Space, but the project is still in testing and has not been deployed yet. It uses a CrewAI multi-agent pipeline to turn pantry photos or typed ingredients into authentic Tunisian recipes. It also produces a local grocery sourcing guide (Ottawa/Gatineau, Montreal, Quebec City, Toronto) and a nutrition analysis. Recipe suggestions draw on a RAG store built from scanned Tunisian cookbooks.
 
 ## Commands
 
@@ -24,11 +24,15 @@ ruff check .                  # ruff is pinned in requirements.txt
 
 The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls back to the root `.env`. `src/tools.py`, `app.py`, and the ingestion scripts only read the root `.env`.
 
-- `ANTHROPIC_API_KEY`: required. `src/crew.py` raises an error at import time if it is missing.
+- `GROQ_API_KEY` and `GEMINI_API_KEY` (or `GOOGLE_API_KEY`): the free service pool used when the user gives no key of their own. Groq runs first, Gemini takes over if the Groq run fails. With neither, users must enter their own key.
+- `ANTHROPIC_API_KEY`: optional. Only used for vision if `VISION_MODEL` is an Anthropic model.
+- `GROQ_MODEL`, `GEMINI_MODEL`, `ANTHROPIC_MODEL`, `OPENAI_MODEL`: optional overrides of the model per provider (`PROVIDER_MODELS` in `src/crew.py`: `groq/openai/gpt-oss-120b`, `gemini/gemini-3.5-flash-lite`, `anthropic/claude-haiku-4-5-20251001`, `openai/gpt-4o-mini`). Providers retire models often: `llama-3.3-70b-versatile` (Groq), `gemini-1.5-flash` and `claude-3-5-haiku-20241022` no longer answer.
 - `SERPER_API_KEY`: optional. Enables the chef search (`ChefSearchTool` in `src/tools.py`: written recipes and YouTube videos) for the modern chef recipe styles. Without it, those styles fall back to the classic recipe with a notice.
 - `DATABASE_URL`: Neon Postgres with pgvector. Without it, the dish dropdown shows only "Auto-detect" and the RAG tool returns an error string.
-- `VISION_MODEL`: optional. Sets the model used for image ingredient extraction in `src/tools.py`.
-- `MODEL_NAME` appears in the README but is **ignored**. The crew LLM is hardcoded in `src/crew.py` (`anthropic/claude-haiku-4-5-20251001`, temperature 0.2).
+- `VISION_MODEL`: optional. LiteLLM model for image ingredient extraction on service keys (default: the Gemini model).
+- `MODEL_NAME` (README) and `TEXT_MODEL` are **ignored**. The crew LLM comes from `get_llm_from_user_key()` in `src/crew.py` (temperature 0.2).
+
+**Personal keys (BYOK).** The advanced settings accordion has a password field for the user's own key. `key_provider()` picks the provider from the prefix (`gsk_` Groq, `AIza` or `AQ.` Gemini, `sk-ant-` Anthropic, `sk-` OpenAI; unknown prefixes get an error message). A user key is passed to that user's LLM and vision tool only, never put in `os.environ` (shared by every request), and it is replaced by `***` in displayed and logged errors. Vision uses the user key only for Gemini and Anthropic keys (`vision_tool_for()`); otherwise `VISION_MODEL` on service keys. `IngredientVisionTool` is created per crew and keeps the key in a private attribute, out of its repr. Groq runs through CrewAI's native OpenAI client on Groq's OpenAI compatible endpoint (`make_llm()`): on the LiteLLM route, CrewAI 1.15 leaves its `cache_breakpoint` flag in the messages and Groq rejects them. Gemini needs `google-genai` (CrewAI's native Gemini provider).
 
 ## Architecture
 
@@ -53,7 +57,7 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 **`src/models.py`** defines Pydantic output schemas (`RecipeOutput`, `NutrientAnalysisOutput`), but no task uses them yet (there is no `output_pydantic`). Task outputs are raw markdown text.
 
 **Tools (`src/tools.py`, CrewAI `@tool` functions):**
-- `extract_ingredients_from_image_and_text`: takes comma-separated image paths, base64-encodes the images, and sends them in a LiteLLM `completion` call to Anthropic.
+- `IngredientVisionTool` (`extract_ingredients_from_image_and_text`): takes comma-separated image paths, base64-encodes the images, and sends them in a LiteLLM `completion` call to the vision model.
 - `filter_ingredients_list` and `filter_based_on_dietary_restrictions`: rule-based. The keyword lists are mostly in French (e.g. `végétarien`, `semoule`).
 - `search_tunisian_recipes_tool`: RAG search. It embeds the query with fastembed `BAAI/bge-small-en-v1.5` (384 dimensions), then runs a cosine search on the `tunisian_recipes` table with a similarity threshold of ≥ 0.55 and a limit of 2 results.
 

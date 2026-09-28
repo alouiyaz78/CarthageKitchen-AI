@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from fastembed import TextEmbedding
 from litellm import completion
 import psycopg2
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 import requests
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -38,12 +38,12 @@ def encode_image_to_base64(path: str) -> str:
     return base64.b64encode(image_file.read()).decode("utf-8")
 
 
-@tool("extract_ingredients_from_image_and_text")
-def extract_ingredients_from_image_and_text(
-    image_input: str = "None", manual_input: str = "None"
+def extract_ingredients(
+    image_input: str, manual_input: str, model: str, api_key: str | None
 ) -> str:
   """Extract the ingredients visible in one or more images and merge them with
-  the ingredients typed by the user."""
+  the ingredients typed by the user. Without an api_key, LiteLLM reads the
+  service key of the model's provider from the environment."""
   content = []
 
   if image_input and image_input not in ["None", "null", ""]:
@@ -83,19 +83,42 @@ def extract_ingredients_from_image_and_text(
   if not content:
     return "Aucun ingrédient détecté ni renseigné."
 
-  vision_model = os.getenv("VISION_MODEL", "claude-haiku-4-5-20251001")
-  clean_model = vision_model.replace("anthropic/", "")
-  litellm_model = f"anthropic/{clean_model}"
-
   try:
     response = completion(
-        model=litellm_model,
+        model=model,
         messages=[{"role": "user", "content": content}],
-        api_key=os.getenv("ANTHROPIC_API_KEY"),
+        api_key=api_key,
     )
     return response.choices[0].message.content
   except Exception as err:
-    return f"Erreur lors de la détection visuelle : {str(err)}"
+    message = str(err).replace(api_key, "***") if api_key else str(err)
+    return f"Erreur lors de la détection visuelle : {message}"
+
+
+class VisionInput(BaseModel):
+  image_input: str = Field("None", description="Comma-separated image paths.")
+  manual_input: str = Field("None", description="Ingredients typed by the user.")
+
+
+class IngredientVisionTool(BaseTool):
+  """One instance per crew, so a user's own key never leaves their request."""
+
+  name: str = "extract_ingredients_from_image_and_text"
+  description: str = (
+      "Extract the ingredients visible in one or more images and merge them"
+      " with the ingredients typed by the user."
+  )
+  args_schema: type[BaseModel] = VisionInput
+  model: str
+  # Private, so the key stays out of the tool's repr and any logged schema.
+  _api_key: str | None = PrivateAttr(default=None)
+
+  def __init__(self, model: str, api_key: str | None = None, **kwargs):
+    super().__init__(model=model, **kwargs)
+    self._api_key = api_key
+
+  def _run(self, image_input: str = "None", manual_input: str = "None") -> str:
+    return extract_ingredients(image_input, manual_input, self.model, self._api_key)
 
 
 @tool("filter_ingredients_list")

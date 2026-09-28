@@ -14,6 +14,7 @@ from src.crew import (
     RECIPE_TASK,
     SOURCING_TASK,
     WEB_SEARCH_AVAILABLE,
+    get_llm_from_user_key,
     NourishBotAnalysisCrew,
     NourishBotRecipeCrew,
 )
@@ -67,7 +68,7 @@ DIETARY_PROFILES = [
     "Diabetic / Low Glycemic",
     "Low Sodium (Hypertension)",
 ]
-CITIES = ["Ottawa / Gatineau", "Montreal", "Quebec City"]
+CITIES = ["Ottawa / Gatineau", "Montreal", "Quebec City", "Toronto"]
 
 UI_TEXT = {
     "en": {
@@ -138,6 +139,7 @@ UI_TEXT = {
             "Ottawa / Gatineau",
             "Montreal (Greater Montreal)",
             "Quebec City",
+            "Toronto (GTA)",
         ],
         "mode_label": "Mode",
         "mode_recipe": "Full culinary studio",
@@ -229,6 +231,20 @@ UI_TEXT = {
         "msg_analysis_recipe": "*Dietary analysis mode: no recipe generated.*",
         "msg_analysis_shopping": "*No shopping list in this mode.*",
         "msg_error": "**Something went wrong:**",
+        "byok_header": "Advanced settings",
+        "byok_label": "Optional personal API key (Groq, Gemini, Anthropic or OpenAI)",
+        "byok_placeholder": (
+            "gsk_..., AIza..., sk-ant-... or sk-... (leave empty for the free demo)"
+        ),
+        "msg_bad_key": (
+            "This API key is not recognized. Use a Groq (gsk_), Gemini (AIza or AQ.),"
+            " Anthropic (sk-ant-) or OpenAI (sk-) key, or leave the field empty for"
+            " the free demo."
+        ),
+        "msg_no_llm": (
+            "No language model is configured on this server. Enter your own API key"
+            " in the advanced settings."
+        ),
         "msg_no_output": "No result was generated.",
     },
     "fr": {
@@ -298,6 +314,7 @@ UI_TEXT = {
             "Ottawa / Gatineau",
             "Montréal (Grand Montréal)",
             "Québec (Ville de Québec)",
+            "Toronto (Grand Toronto)",
         ],
         "mode_label": "Mode",
         "mode_recipe": "Studio culinaire complet",
@@ -395,6 +412,20 @@ UI_TEXT = {
         ),
         "msg_analysis_shopping": "*Pas de liste de courses dans ce mode.*",
         "msg_error": "**Erreur d'exécution :**",
+        "byok_header": "Paramètres avancés",
+        "byok_label": "Clé API personnelle optionnelle (Groq, Gemini, Anthropic ou OpenAI)",
+        "byok_placeholder": (
+            "gsk_..., AIza..., sk-ant-... ou sk-... (laisser vide pour la démo gratuite)"
+        ),
+        "msg_bad_key": (
+            "Cette clé API n'est pas reconnue. Utilisez une clé Groq (gsk_), Gemini"
+            " (AIza ou AQ.), Anthropic (sk-ant-) ou OpenAI (sk-), ou laissez le champ"
+            " vide pour la démo gratuite."
+        ),
+        "msg_no_llm": (
+            "Aucun modèle de langage n'est configuré sur ce serveur. Saisissez votre"
+            " propre clé API dans les paramètres avancés."
+        ),
         "msg_no_output": "Aucun résultat généré.",
     },
 }
@@ -544,9 +575,16 @@ def run_pipeline(
     workflow_type,
     recipe_style,
     language,
+    user_key,
     progress=gr.Progress(track_tqdm=True),
 ):
   t = ui_text(language)
+  try:
+    llms = get_llm_from_user_key(user_key)
+  except ValueError:
+    return t["msg_bad_key"], "", ""
+  if not llms:
+    return t["msg_no_llm"], "", ""
   # Without a Serper key the web styles cannot work: fall back to classic and
   # say so above the recipe.
   web_fallback = recipe_style != CLASSIC_STYLE and not WEB_SEARCH_AVAILABLE
@@ -587,27 +625,47 @@ def run_pipeline(
       "recipe_style": recipe_style,
   }
 
-  if workflow_type == "recipe":
-    crew_builder = NourishBotRecipeCrew(
-        image_data=images_arg,
-        manual_ingredients=manual_arg,
-        recipe_style=recipe_style,
-    )
-  else:
-    crew_builder = NourishBotAnalysisCrew(
-        image_data=images_arg, manual_ingredients=manual_arg
-    )
+  user_key = (user_key or "").strip() or None
+
+  def hide_key(err) -> str:
+    return str(err).replace(user_key, "***") if user_key else str(err)
+
+  # Without a user key there are two free models: if the first fails (quota,
+  # outage), the whole run is retried on the next one.
+  for attempt, llm in enumerate(llms, 1):
+    if workflow_type == "recipe":
+      crew_builder = NourishBotRecipeCrew(
+          llm,
+          image_data=images_arg,
+          manual_ingredients=manual_arg,
+          recipe_style=recipe_style,
+          user_key=user_key,
+      )
+    else:
+      crew_builder = NourishBotAnalysisCrew(
+          llm, image_data=images_arg, manual_ingredients=manual_arg,
+          user_key=user_key,
+      )
+    try:
+      crew_output = crew_builder.crew().kickoff(inputs=inputs)
+      break
+    except Exception as err:
+      if attempt < len(llms):
+        logging.warning(f"{llm.model} failed, trying the next model: {hide_key(err)}")
+        continue
+      logging.error(f"Pipeline failed: {hide_key(err)}")
+      return f"{t['msg_error']}\n\n```text\n{hide_key(err)}\n```", "", ""
+
   try:
     recipe_md, shopping_md, nutrition_md = dispatch_outputs_to_tabs(
-        crew_builder.crew().kickoff(inputs=inputs), t, recipe_style,
-        dietary_restrictions,
+        crew_output, t, recipe_style, dietary_restrictions,
     )
     if web_fallback and workflow_type == "recipe":
       recipe_md = f"{t['msg_web_unavailable']}\n\n{recipe_md}"
     return recipe_md, shopping_md, nutrition_md
   except Exception as err:
-    logging.exception(f"Pipeline failed: {err}")
-    return f"{t['msg_error']}\n\n```text\n{err}\n```", "", ""
+    logging.exception(f"Pipeline failed: {hide_key(err)}")
+    return f"{t['msg_error']}\n\n```text\n{hide_key(err)}\n```", "", ""
 
 
 # UI theme: colors taken from the mosaic background and Sidi Bou Said blue.
@@ -1200,6 +1258,8 @@ def translate_ui(language, category, recipe_md, shopping_md, nutrition_md):
           label=t["mode_label"],
           choices=[(t["mode_recipe"], "recipe"), (t["mode_analysis"], "analysis")],
       ),
+      gr.update(label=t["byok_header"]),
+      gr.update(label=t["byok_label"], placeholder=t["byok_placeholder"]),
       gr.update(value=t["submit"]),
       gr.update(label=t["out_recipe"]),
       gr.update(label=t["out_shopping"]),
@@ -1296,6 +1356,12 @@ with gr.Blocks(
             value="recipe",
             label=T["mode_label"],
         )
+        with gr.Accordion(T["byok_header"], open=False) as byok_accordion:
+          user_key_input = gr.Textbox(
+              label=T["byok_label"],
+              placeholder=T["byok_placeholder"],
+              type="password",
+          )
 
       submit_btn = gr.Button(
           T["submit"],
@@ -1354,6 +1420,8 @@ with gr.Blocks(
           dietary_free_text,
           city_selector,
           workflow_selector,
+          byok_accordion,
+          user_key_input,
           submit_btn,
           recipe_tab,
           shopping_tab,
@@ -1388,6 +1456,7 @@ with gr.Blocks(
           workflow_selector,
           style_selector,
           language_selector,
+          user_key_input,
       ],
       outputs=[recipe_box, shopping_box, analysis_box],
   )
