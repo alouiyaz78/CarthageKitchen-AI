@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from pathlib import Path
 import re
 from urllib.parse import quote
@@ -15,11 +16,13 @@ from src.crew import (
     SOURCING_TASK,
     WEB_SEARCH_AVAILABLE,
     get_llm_from_user_key,
+    key_provider,
     NourishBotAnalysisCrew,
     NourishBotRecipeCrew,
 )
 from src.dish_categories import CATEGORIES, dish_category
 from src.nutrition import nutrition_report
+from src import telemetry
 from src.tools import get_recipe_by_name
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -149,6 +152,15 @@ UI_TEXT = {
         "out_shopping": "2. Grocery & Markets",
         "out_nutrition": "3. Nutrition",
         "print_recipe": "Print recipe",
+        "fb_header": "Was this recipe useful?",
+        "fb_rating_label": "Your rating",
+        "fb_ratings": ["Useful", "Needs work"],
+        "fb_comment_label": "Comment (optional)",
+        "fb_comment_placeholder": "Authenticity, quantities, missing step...",
+        "fb_submit": "Send feedback",
+        "fb_thanks": "Thank you, your feedback has been recorded.",
+        "fb_no_run": "Generate a recipe first, then rate it.",
+        "fb_no_rating": "Pick a rating first.",
         "print_shopping": "Print shopping list",
         "ph_recipe": (
             "Your recipe will appear here.",
@@ -324,6 +336,15 @@ UI_TEXT = {
         "out_shopping": "2. Épicerie et marchés",
         "out_nutrition": "3. Nutrition",
         "print_recipe": "Imprimer la recette",
+        "fb_header": "Cette recette vous a-t-elle été utile ?",
+        "fb_rating_label": "Votre avis",
+        "fb_ratings": ["Utile", "À améliorer"],
+        "fb_comment_label": "Commentaire (facultatif)",
+        "fb_comment_placeholder": "Authenticité, quantités, étape manquante...",
+        "fb_submit": "Envoyer mon avis",
+        "fb_thanks": "Merci, votre avis a bien été enregistré.",
+        "fb_no_run": "Générez d'abord une recette, puis donnez votre avis.",
+        "fb_no_rating": "Choisissez d'abord un avis.",
         "print_shopping": "Imprimer la liste de courses",
         "ph_recipe": (
             "La fiche recette détaillée s'affichera ici.",
@@ -1213,6 +1234,60 @@ gradio-app { position: relative; z-index: 1; }
 }
 """.replace("__MOSAIC_URL__", ui_asset_url(MOSAIC_FILE))
 
+# Feedback values stored in the database, whatever the UI language.
+FEEDBACK_RATINGS = ["up", "down"]
+
+
+def run_pipeline_tracked(*args):
+  """run_pipeline for the UI: times the run, logs it in the background and
+  returns its id, which the feedback form attaches to the user's rating."""
+  (image_files, manual_text, selected_dish, _cravings, _diet, _custom,
+   target_city, workflow_type, recipe_style, language, user_key) = args
+  t = ui_text(language)
+  start = time.time()
+  outputs = run_pipeline(*args)
+  duration = time.time() - start
+
+  recipe_md = outputs[0]
+  if recipe_md.startswith(t["msg_error"]):
+    status = "error"
+  elif recipe_md in (t["msg_missing_input"], t["msg_bad_key"], t["msg_no_llm"]):
+    status = "rejected"
+  else:
+    status = "success"
+  input_type = "+".join(
+      name for name, used in (
+          ("photo", bool(image_files)),
+          ("text", bool(manual_text and manual_text.strip())),
+          ("heritage", bool(selected_dish) and selected_dish != AUTO_DETECT),
+      ) if used
+  ) or "none"
+  try:
+    key_source = key_provider(user_key) or "free_pool"
+  except ValueError:
+    key_source = "invalid"
+
+  run_id = telemetry.new_run_id()
+  telemetry.log_run(
+      run_id, workflow_type, input_type,
+      selected_dish if selected_dish != AUTO_DETECT else None,
+      recipe_style, target_city, LANGUAGES.get(language, "en"), key_source,
+      duration, status,
+  )
+  return (*outputs, run_id if status == "success" else None, gr.update(value=""))
+
+
+def submit_feedback(run_id, rating, comment, language):
+  t = ui_text(language)
+  if not run_id:
+    return t["fb_no_run"], gr.update()
+  if rating not in FEEDBACK_RATINGS:
+    return t["fb_no_rating"], gr.update()
+  telemetry.log_feedback(run_id, rating, comment)
+  # One rating per recipe: a new generation gives a new run id.
+  return t["fb_thanks"], None
+
+
 # Placeholders in every language, so a language switch only replaces an
 # output box that still shows its placeholder, never a generated result.
 OUTPUT_PLACEHOLDERS = {
@@ -1266,6 +1341,13 @@ def translate_ui(language, category, recipe_md, shopping_md, nutrition_md):
       gr.update(label=t["out_nutrition"]),
       gr.update(value=t["print_recipe"]),
       gr.update(value=t["print_shopping"]),
+      gr.update(label=t["fb_header"]),
+      gr.update(
+          label=t["fb_rating_label"],
+          choices=list(zip(t["fb_ratings"], FEEDBACK_RATINGS)),
+      ),
+      gr.update(label=t["fb_comment_label"], placeholder=t["fb_comment_placeholder"]),
+      gr.update(value=t["fb_submit"]),
       placeholder_update(recipe_md, "ph_recipe"),
       placeholder_update(shopping_md, "ph_shopping"),
       placeholder_update(nutrition_md, "ph_nutrition"),
@@ -1379,6 +1461,20 @@ with gr.Blocks(
           print_recipe_btn = gr.Button(
               T["print_recipe"], size="sm", elem_classes="ck-print-btn"
           )
+          run_id_state = gr.State(None)
+          with gr.Accordion(T["fb_header"], open=False) as feedback_box:
+            feedback_rating = gr.Radio(
+                choices=list(zip(T["fb_ratings"], FEEDBACK_RATINGS)),
+                label=T["fb_rating_label"],
+            )
+            feedback_comment = gr.Textbox(
+                label=T["fb_comment_label"],
+                placeholder=T["fb_comment_placeholder"],
+                lines=2,
+                max_length=telemetry.MAX_COMMENT,
+            )
+            feedback_btn = gr.Button(T["fb_submit"], size="sm")
+            feedback_status = gr.Markdown("")
 
         with gr.TabItem(
             T["out_shopping"], elem_id="ck-tab-shopping"
@@ -1428,6 +1524,10 @@ with gr.Blocks(
           nutrition_tab,
           print_recipe_btn,
           print_shopping_btn,
+          feedback_box,
+          feedback_rating,
+          feedback_comment,
+          feedback_btn,
           recipe_box,
           shopping_box,
           analysis_box,
@@ -1444,7 +1544,7 @@ with gr.Blocks(
   print_shopping_btn.click(fn=None, js=print_js("ck-shopping-md"))
 
   submit_btn.click(
-      fn=run_pipeline,
+      fn=run_pipeline_tracked,
       inputs=[
           image_files_input,
           manual_text_input,
@@ -1458,7 +1558,13 @@ with gr.Blocks(
           language_selector,
           user_key_input,
       ],
-      outputs=[recipe_box, shopping_box, analysis_box],
+      outputs=[recipe_box, shopping_box, analysis_box, run_id_state, feedback_status],
+  )
+
+  feedback_btn.click(
+      fn=submit_feedback,
+      inputs=[run_id_state, feedback_rating, feedback_comment, language_selector],
+      outputs=[feedback_status, run_id_state],
   )
 
 if __name__ == "__main__":
