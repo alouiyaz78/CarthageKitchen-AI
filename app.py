@@ -1568,4 +1568,6 @@ with gr.Blocks(
   )
 
 if __name__ == "__main__":
-  demo.launch(server_name="0.0.0.0", server_port=7860)
+  # No SSR: on Spaces its Node proxy (port 7860 -> Python 7861) stops
+  # answering and every page load gets a 502, while Python keeps running.
+  demo.launch(server_name="0.0.0.0", server_port=7860, ssr_mode=False)

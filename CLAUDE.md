@@ -17,7 +17,7 @@ ruff check .                  # ruff is pinned in requirements.txt
 
 - There is no `pyproject.toml`, so the README's `uv sync` does not work. Use `uv pip` with `requirements.txt`.
 - `requirements.txt` lists only direct dependencies, pinned to the versions tested in `.venv` (crewai 1.15.22, gradio 6.28.0). Check changes with `uv pip compile requirements.txt`.
-- Gradio 6.28.0 everywhere: `.venv`, `requirements.txt` and the README Space front-matter (`sdk_version`, with `python_version: "3.12"`). Keep the three in sync when upgrading. In 6.x, passing `theme`/`css`/`js`/`head` to `gr.Blocks` logs a deprecation warning but still works. `app.py` keeps them on `gr.Blocks` so it runs on both versions.
+- Gradio 6.28.0 everywhere: `.venv`, `requirements.txt` and the README Space front-matter (`sdk_version`, with `python_version: "3.12"`). Keep the three in sync when upgrading. In 6.x, passing `theme`/`css`/`js`/`head` to `gr.Blocks` logs a deprecation warning but still works. `app.py` keeps them on `gr.Blocks` so it runs on both versions. `demo.launch()` sets `ssr_mode=False`: on the Space, the SSR Node proxy stopped answering and every page load got a 502 while the Python server kept running.
 - There is no unit test suite. `scripts/test_quality_eval.py` runs 4 real cases end to end on the free Groq/Gemini pool (it removes the paid keys from the environment) and prints a PASS/FAIL table. `test_claude_vision_109.py` is not a pytest file: it is an ingestion script that writes to the production database.
 
 ## Environment
