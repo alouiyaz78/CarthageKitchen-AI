@@ -82,7 +82,6 @@ VERBOSE = os.getenv("CREW_VERBOSE") == "1"
 # tasks actually ran.
 RECIPE_TASK = "suggest_heritage_recipe_task"
 SOURCING_TASK = "source_ingredients_task"
-NUTRITION_TASK = "analyze_nutrition_task"
 MEAL_ANALYSIS_TASK = "analyze_meal_task"
 
 AGENT_TOOLS = {
@@ -149,20 +148,17 @@ class NourishBotRecipeCrew:
         extra_tools=[web_search_tool()] if use_web else [],
     )
     sourcer = make_agent("ingredient_sourcing_agent")
-    nutritionist = make_agent("nutrient_analysis_agent")
 
     recipe_task = make_task(
         RECIPE_TASK, chef, context=[filter_task] if filter_task else []
     )
-    # Sourcing and nutrition only need the recipe, not the whole history.
+    # Sourcing only needs the recipe, not the whole history. Nutrition is
+    # computed in Python by app.py (src/nutrition.py), without an LLM call.
     sourcing_task = make_task(SOURCING_TASK, sourcer, context=[recipe_task])
-    nutrition_task = make_task(
-        NUTRITION_TASK, nutritionist, context=[recipe_task]
-    )
 
     return Crew(
-        agents=agents + [chef, sourcer, nutritionist],
-        tasks=tasks + [recipe_task, sourcing_task, nutrition_task],
+        agents=agents + [chef, sourcer],
+        tasks=tasks + [recipe_task, sourcing_task],
         process=Process.sequential,
         verbose=VERBOSE,
     )

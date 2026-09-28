@@ -10,7 +10,6 @@ from src.crew import (
     CLASSIC_STYLE,
     COMPARISON_STYLE,
     MEAL_ANALYSIS_TASK,
-    NUTRITION_TASK,
     RECIPE_STYLES,
     RECIPE_TASK,
     SOURCING_TASK,
@@ -19,6 +18,7 @@ from src.crew import (
     NourishBotRecipeCrew,
 )
 from src.dish_categories import CATEGORIES, dish_category
+from src.nutrition import nutrition_report
 from src.tools import get_recipe_by_name
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -171,6 +171,57 @@ UI_TEXT = {
         "chef_variant": "**Chef's recipe** — Source: {name}, [{title}]({url})",
         "head_shopping": "Shopping Guide & Local Markets",
         "head_nutrition": "Nutrition Report & Recommendations",
+        "nut_servings": "Per serving, for {n} servings.",
+        "nut_col_nutrient": "Nutrient",
+        "nut_col_serving": "Per serving",
+        "nut_col_ri": "% reference intake",
+        "nut_rows": {
+            "kcal": "Calories", "protein": "Protein", "carbs": "Carbohydrates",
+            "fat": "Fat", "fiber": "Fiber", "sodium": "Sodium",
+        },
+        "nut_tips_head": "Key points",
+        "nut_foods": {
+            "tomato_paste": "tomato paste", "olives": "olives", "harissa": "harissa",
+            "capers": "capers", "preserved_lemon": "preserved lemon",
+            "stock_cube": "stock cubes", "anchovies": "anchovies", "salt": "salt",
+            "cheese": "cheese", "merguez": "merguez",
+        },
+        "nut_tip_salt": (
+            "Sodium is high ({mg} mg per serving), mainly from: {items}. Rinse olives"
+            " and capers, and salt at the end, after tasting."
+        ),
+        "nut_tip_fat": (
+            "Fat is high: about {ml} ml of oil or fat per serving. A third less oil"
+            " still makes a good taklia."
+        ),
+        "nut_tip_carbs": (
+            "Carbohydrates are high ({g} g per serving). Serve less semolina, rice or"
+            " pasta and more vegetables."
+        ),
+        "nut_tip_carbs_diabetic": (
+            "Carbohydrates are high for a low glycemic diet ({g} g per serving). Halve"
+            " the starch portion and add a salad or chickpeas."
+        ),
+        "nut_tip_kcal": (
+            "The serving is energy dense ({kcal} kcal). A smaller portion with a"
+            " salad keeps the meal balanced."
+        ),
+        "nut_tip_fiber": "Fiber is low ({g} g per serving). Add vegetables or chickpeas.",
+        "nut_tip_protein": (
+            "Protein is low ({g} g per serving). Add an egg, chickpeas or lentils."
+        ),
+        "nut_tip_balanced": "No nutrient stands out as too high or too low for this serving.",
+        "nut_coverage": "Computed from {done} of {total} ingredients.",
+        "nut_missing": "Not counted (no usable quantity or unknown ingredient): {items}.",
+        "nut_salt_taste": "Sodium does not include the salt added to taste.",
+        "nut_disclaimer": (
+            "Estimate from a reference table of raw ingredients (Ciqual, USDA), not a"
+            " medical assessment."
+        ),
+        "nut_none": (
+            "No ingredient quantities could be read from this recipe, so there is no"
+            " nutrition estimate."
+        ),
         "msg_missing_input": (
             "**Action needed:** upload a photo, type some ingredients or pick"
             " a dish from the menu."
@@ -280,6 +331,61 @@ UI_TEXT = {
         "chef_variant": "**Recette du chef** — Source : {name}, [{title}]({url})",
         "head_shopping": "Guide des courses et marchés locaux",
         "head_nutrition": "Bilan nutritionnel et recommandations",
+        "nut_servings": "Par portion, pour {n} portions.",
+        "nut_col_nutrient": "Nutriment",
+        "nut_col_serving": "Par portion",
+        "nut_col_ri": "% des apports de référence",
+        "nut_rows": {
+            "kcal": "Calories", "protein": "Protéines", "carbs": "Glucides",
+            "fat": "Lipides", "fiber": "Fibres", "sodium": "Sodium",
+        },
+        "nut_tips_head": "Points clés",
+        "nut_foods": {
+            "tomato_paste": "concentré de tomate", "olives": "olives",
+            "harissa": "harissa", "capers": "câpres", "preserved_lemon": "citron confit",
+            "stock_cube": "bouillon cube", "anchovies": "anchois", "salt": "sel",
+            "cheese": "fromage", "merguez": "merguez",
+        },
+        "nut_tip_salt": (
+            "Sodium élevé ({mg} mg par portion), surtout à cause de : {items}. Rincez"
+            " olives et câpres, et salez en fin de cuisson après avoir goûté."
+        ),
+        "nut_tip_fat": (
+            "Lipides élevés : environ {ml} ml d'huile ou de matière grasse par portion."
+            " Un tiers d'huile en moins suffit encore pour une bonne taklia."
+        ),
+        "nut_tip_carbs": (
+            "Glucides élevés ({g} g par portion). Servez moins de semoule, de riz ou"
+            " de pâtes et plus de légumes."
+        ),
+        "nut_tip_carbs_diabetic": (
+            "Glucides élevés pour un régime à faible index glycémique ({g} g par"
+            " portion). Réduisez de moitié la part de féculents et ajoutez une salade"
+            " ou des pois chiches."
+        ),
+        "nut_tip_kcal": (
+            "Portion très énergétique ({kcal} kcal). Une part plus petite avec une"
+            " salade garde le repas équilibré."
+        ),
+        "nut_tip_fiber": (
+            "Peu de fibres ({g} g par portion). Ajoutez des légumes ou des pois chiches."
+        ),
+        "nut_tip_protein": (
+            "Peu de protéines ({g} g par portion). Ajoutez un œuf, des pois chiches ou"
+            " des lentilles."
+        ),
+        "nut_tip_balanced": "Aucun nutriment n'est trop élevé ni trop bas pour cette portion.",
+        "nut_coverage": "Calculé à partir de {done} ingrédients sur {total}.",
+        "nut_missing": "Non comptés (quantité illisible ou ingrédient inconnu) : {items}.",
+        "nut_salt_taste": "Le sodium n'inclut pas le sel ajouté selon le goût.",
+        "nut_disclaimer": (
+            "Estimation à partir d'une table d'ingrédients crus (Ciqual, USDA), pas un"
+            " avis médical."
+        ),
+        "nut_none": (
+            "Aucune quantité d'ingrédient n'a pu être lue dans cette recette : pas"
+            " d'estimation nutritionnelle."
+        ),
         "msg_missing_input": (
             "**Action requise :** chargez une photo, saisissez des ingrédients"
             " ou choisissez un plat dans le menu."
@@ -394,11 +500,14 @@ def recipe_heading(text: str, t: dict, recipe_style: str) -> str:
   return t["head_recipe_chef"]
 
 
-def dispatch_outputs_to_tabs(crew_output, t: dict, recipe_style: str):
+def dispatch_outputs_to_tabs(
+    crew_output, t: dict, recipe_style: str, dietary_restrictions: str = "None"
+):
   """Split the crew output into the recipe, shopping and nutrition tabs.
 
   Outputs are matched by task name, since the number of tasks that run
-  depends on the inputs (no vision step without photos, for example).
+  depends on the inputs (no vision step without photos, for example). The
+  recipe nutrition is computed in Python from the recipe card.
   """
   outputs = {
       o.name: strip_emoji(str(o.raw)).strip()
@@ -420,7 +529,7 @@ def dispatch_outputs_to_tabs(crew_output, t: dict, recipe_style: str):
   return (
       f"## {recipe_heading(recipe, t, recipe_style)}\n\n{render_source_lines(recipe, t)}",
       f"## {t['head_shopping']}\n\n{outputs.get(SOURCING_TASK, '')}",
-      f"## {t['head_nutrition']}\n\n{outputs.get(NUTRITION_TASK, '')}",
+      f"## {t['head_nutrition']}\n\n{nutrition_report(recipe, t, dietary_restrictions)}",
   )
 
 
@@ -490,7 +599,8 @@ def run_pipeline(
     )
   try:
     recipe_md, shopping_md, nutrition_md = dispatch_outputs_to_tabs(
-        crew_builder.crew().kickoff(inputs=inputs), t, recipe_style
+        crew_builder.crew().kickoff(inputs=inputs), t, recipe_style,
+        dietary_restrictions,
     )
     if web_fallback and workflow_type == "recipe":
       recipe_md = f"{t['msg_web_unavailable']}\n\n{recipe_md}"

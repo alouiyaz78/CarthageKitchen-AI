@@ -74,6 +74,10 @@ suggest_heritage_recipe_task:
 
     3. If nothing qualifies, write the heritage recipe without disclaimer or external links.
     Never write both a CHEF and a VIDEO line. Line 1 MUST be the dish name as a markdown heading.
+    Give the number of servings as a number (e.g., "4 portions"), and list the ingredients as bullets, one
+    ingredient per bullet, each starting with its quantity in g, kg, ml, dl, c. à soupe, c. à café or a count
+    (e.g., "- 500 g d'agneau", "- 2 c. à soupe de concentré de tomate", "- 3 oignons"). The nutrition values are
+    computed from these quantities.
   expected_output: >
     A compact recipe card of 350 words at most: dish name as heading, context sentence, servings and times,
     ingredients, numbered steps, up to 2 tips. Ends with a CHEF line (if written recipe) or VIDEO line (if fallback).
@@ -107,29 +111,6 @@ source_ingredients_task:
     A shopping list of 250 words at most: one table (ingredient, specialty store in {target_city}, supermarket substitute)
     and up to 3 one-line store recommendations.
   agent: ingredient_sourcing_agent
-
-analyze_nutrition_task:
-  description: >
-    Analyze the final recipe provided by the chef.
-    Dietary profile: {dietary_restrictions}
-    Estimate portion size, total caloric intake, macronutrient breakdown (proteins, carbohydrates, fats, fiber, sodium).
-    Account for cooking techniques (olive oil usage, taghmis dipping habits).
-    Deliver actionable dietary tips to balance blood sugar and optimize metabolic health without ruining authenticity.
-
-    Format it as a focused nutrition panel read on a screen, 250 words at most:
-    - One line with the portion size and number of servings.
-    - One markdown table per serving: calories, protein, carbohydrates, fat, fiber, sodium.
-    - Up to 3 short bullets on the key health points for this dietary profile.
-    - Up to 3 short, actionable tips.
-    No ingredient-by-ingredient breakdown and no alternative scenarios.
-    No introduction, no conclusion, no repeated information, no general advice beyond what is asked.
-
-    Write the whole answer in {language}, including headings. Keep Tunisian dish names in their vernacular form.
-    Start directly with the content: no preamble, no comments about these instructions. Do not use emoji or pictographic symbols such as ✓, ✅, ⚠️ or ❌; write "yes", "no" or "warning" in words instead.
-  expected_output: >
-    A nutrition panel of 250 words at most: portion line, one table of per-serving metrics
-    (calories, protein, carbohydrates, fat, fiber, sodium), up to 3 health points and up to 3 tips.
-  agent: nutrient_analysis_agent
 
 analyze_meal_task:
   description: >

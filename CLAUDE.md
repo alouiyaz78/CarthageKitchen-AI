@@ -33,7 +33,7 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 ## Architecture
 
 **Request flow:** `app.py:run_pipeline` builds an `inputs` dict and calls `.crew().kickoff(inputs=inputs)` on one of two crews in `src/crew.py`:
-- `NourishBotRecipeCrew`: detect ingredients (only with photos) → dietary filter (only with photos or typed ingredients) → heritage recipe (RAG) → local sourcing → nutrition. Typed ingredients reach the filter through `{manual_input}` without a vision call. Sourcing and nutrition get `context=[recipe_task]` only, not the whole history.
+- `NourishBotRecipeCrew`: detect ingredients (only with photos) → dietary filter (only with photos or typed ingredients) → heritage recipe (RAG) → local sourcing. Typed ingredients reach the filter through `{manual_input}` without a vision call. Sourcing gets `context=[recipe_task]` only, not the whole history. Nutrition is not a crew task: `app.py` computes it from the recipe card with `src/nutrition.py`.
 - `NourishBotAnalysisCrew`: `detect_ingredients_task` (only with photos), then `analyze_meal_task`.
 - Agent and crew logs are off; set `CREW_VERBOSE=1` to turn them on.
 
@@ -48,7 +48,7 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 - Videos (fallback): Serper `site:youtube.com <name> tunisien`, with each video's real channel from YouTube oEmbed (Serper snippets contain names from the recommended videos sidebar, which led the model to credit the wrong chef). Unresolvable videos are dropped, Teyssir Ksouri and Hendati are listed first. The card is then the heritage recipe plus a `VIDEO:` line.
 `names_other_dish()` drops recipes and videos whose title names a base the request does not (riz, couscous, boulgour, pâtes...), so "riz aux calamars farcis" never reaches the model for "calmars farcis": Haiku accepted it despite the prompt. Other mismatches are still left to the model, and the "What the chef changes" bullets can still contain an invented difference.
 
-**UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `NUTRITION_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`. It also strips emoji from the LLM output. The recipe output also goes through `drop_preamble()` (drops any text before the first markdown heading) because the model does not always follow that rule, and through `render_source_lines()`: the chef writes external sources as `VIDEO: channel | title | url` (a video to watch, never the source of the written recipe) or `CHEF: name | title | url` (the card follows that written recipe), and the app turns them into a sentence in the UI language. The recipe tab title comes from `recipe_heading()`: the heritage title only in `classic` style, the comparison title in `comparison`; in `chefs_variants`, traditional recipe and chef video for a `VIDEO:` line, contemporary card otherwise (including a missing or malformed `CHEF:` line).
+**UI output is matched by task name.** The number of tasks varies with the inputs, so `app.py:dispatch_outputs_to_tabs` looks outputs up by `TaskOutput.name` (`RECIPE_TASK`, `SOURCING_TASK`, `MEAL_ANALYSIS_TASK` in `src/crew.py`). Tasks must be created with `make_task()`, which sets `name=`. It also strips emoji from the LLM output. The recipe output also goes through `drop_preamble()` (drops any text before the first markdown heading) because the model does not always follow that rule, and through `render_source_lines()`: the chef writes external sources as `VIDEO: channel | title | url` (a video to watch, never the source of the written recipe) or `CHEF: name | title | url` (the card follows that written recipe), and the app turns them into a sentence in the UI language. The recipe tab title comes from `recipe_heading()`: the heritage title only in `classic` style, the comparison title in `comparison`; in `chefs_variants`, traditional recipe and chef video for a `VIDEO:` line, contemporary card otherwise (including a missing or malformed `CHEF:` line).
 
 **`src/models.py`** defines Pydantic output schemas (`RecipeOutput`, `NutrientAnalysisOutput`), but no task uses them yet (there is no `output_pydantic`). Task outputs are raw markdown text.
 
@@ -58,6 +58,8 @@ The app reads a `.env` file. `src/crew.py` looks for `src/.env` first and falls 
 - `search_tunisian_recipes_tool`: RAG search. It embeds the query with fastembed `BAAI/bge-small-en-v1.5` (384 dimensions), then runs a cosine search on the `tunisian_recipes` table with a similarity threshold of ≥ 0.55 and a limit of 2 results.
 
 **`app.py` queries the database at import time.** It loads the list of dish names from `tunisian_recipes` when the module is imported, to fill the dropdown.
+
+**Nutrition (`src/nutrition.py`, no LLM).** `nutrition_report()` reads the ingredient bullets of the recipe card (the section under an ingredient, pantry or add-on heading, up to the steps; otherwise every bullet before the first numbered step) and the servings count (default 4). `calculate_recipe_nutrition()` parses each quantity (g, kg, ml, dl, cl, l, c. à soupe/tbsp = 15 ml, c. à café/tsp = 5 ml, gousse, botte, pincée, or a count times `Food.piece`), matches the line against `FOODS` (per 100 g raw or dry, rounded from Ciqual and USDA; the first matching regex wins, so specific entries come before generic ones) and sums per serving. Volumes use `Food.density`; frying oil counts for 10%. The tips are fixed rules in `nutrition_tips()` (sodium, oil over 50 ml per serving, carbohydrates with a lower threshold for the diabetic profile, calories, fiber, protein), 3 at most. Every visible string is a `nut_*` key in `UI_TEXT`. Lines with no usable quantity or an unknown ingredient are listed as not counted, so add missing Tunisian ingredients to `FOODS`. The recipe task asks for one quantified ingredient per bullet for this parser. The meal analysis mode (`analyze_meal_task`) still uses the LLM.
 
 ## RAG ingestion (root-level scripts, run manually)
 
@@ -84,10 +86,6 @@ The background mosaic and the hero photos come from `assets/ui/`. They are serve
 
 ## Next steps
 
-**Deterministic nutrition values.** Calories and macros are currently estimated by the LLM in `analyze_nutrition_task` and `analyze_meal_task`, and the numbers are not reliable (arithmetic slips such as 2 dl of oil over 4 servings reported as 5 ml per serving). The planned fix:
-1. Have the recipe task return a structured ingredient list (name, quantity, unit) through `output_pydantic`.
-2. Map each ingredient to a food composition table: Ciqual (ANSES) first, since most ingredient names are French, with USDA FoodData Central as a fallback.
-3. Compute calories, protein, carbohydrates, fat, fiber and sodium per serving in Python.
-4. Pass those computed values to the nutrition agent, which only writes the interpretation and advice.
+**Nutrition, next steps.** Recipe nutrition is now computed in Python (see above). Still open: meal analysis mode is estimated by the LLM in `analyze_meal_task` and its numbers are not reliable; a structured ingredient list from the recipe task (`output_pydantic`) would be sturdier than parsing markdown bullets; `FOODS` could be replaced by the full Ciqual table.
 
 **Before public deployment.** Replace the images whose rights are unclear or that carry a watermark: `assets/ui/tajine.jpg` shows a "Marie N Guérin" watermark. The other committed images have no visible watermark, but their source still needs checking before publishing.
