@@ -1,6 +1,6 @@
 ---
 title: CarthageKitchen AI
-emoji: 🇹🇳
+emoji: 🥘
 colorFrom: yellow
 colorTo: red
 sdk: gradio
