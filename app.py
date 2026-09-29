@@ -16,7 +16,6 @@ from src.crew import (
     SOURCING_TASK,
     WEB_SEARCH_AVAILABLE,
     get_llm_from_user_key,
-    key_provider,
     NourishBotAnalysisCrew,
     NourishBotRecipeCrew,
 )
@@ -152,15 +151,16 @@ UI_TEXT = {
         "out_shopping": "2. Grocery & Markets",
         "out_nutrition": "3. Nutrition",
         "print_recipe": "Print recipe",
-        "fb_header": "Was this recipe useful?",
+        "fb_header": "Is this recipe authentic?",
         "fb_rating_label": "Your rating",
-        "fb_ratings": ["Useful", "Needs work"],
-        "fb_comment_label": "Comment (optional)",
-        "fb_comment_placeholder": "Authenticity, quantities, missing step...",
+        "fb_ratings": ["Authentic", "Hallucination or error"],
+        "fb_comment_label": "Remarks or ingredient corrections (optional)",
+        "fb_comment_placeholder": "Wrong ingredient, quantity, missing step...",
         "fb_submit": "Send feedback",
         "fb_thanks": "Thank you, your feedback has been recorded.",
         "fb_no_run": "Generate a recipe first, then rate it.",
         "fb_no_rating": "Pick a rating first.",
+        "fb_failed": "Your feedback could not be saved. Please try again later.",
         "print_shopping": "Print shopping list",
         "ph_recipe": (
             "Your recipe will appear here.",
@@ -336,15 +336,16 @@ UI_TEXT = {
         "out_shopping": "2. Épicerie et marchés",
         "out_nutrition": "3. Nutrition",
         "print_recipe": "Imprimer la recette",
-        "fb_header": "Cette recette vous a-t-elle été utile ?",
+        "fb_header": "Cette recette est-elle authentique ?",
         "fb_rating_label": "Votre avis",
-        "fb_ratings": ["Utile", "À améliorer"],
-        "fb_comment_label": "Commentaire (facultatif)",
-        "fb_comment_placeholder": "Authenticité, quantités, étape manquante...",
-        "fb_submit": "Envoyer mon avis",
+        "fb_ratings": ["Authentique", "Hallucination ou erreur"],
+        "fb_comment_label": "Remarques ou corrections d'ingrédients (facultatif)",
+        "fb_comment_placeholder": "Ingrédient erroné, quantité, étape manquante...",
+        "fb_submit": "Envoyer le retour",
         "fb_thanks": "Merci, votre avis a bien été enregistré.",
         "fb_no_run": "Générez d'abord une recette, puis donnez votre avis.",
         "fb_no_rating": "Choisissez d'abord un avis.",
+        "fb_failed": "Votre retour n'a pas pu être enregistré. Réessayez plus tard.",
         "print_shopping": "Imprimer la liste de courses",
         "ph_recipe": (
             "La fiche recette détaillée s'affichera ici.",
@@ -598,7 +599,11 @@ def run_pipeline(
     language,
     user_key,
     progress=gr.Progress(track_tqdm=True),
+    meta: dict | None = None,
 ):
+  """The recipe pipeline. If given, `meta` receives the model that answered
+  ("model") and the error text of a failed run ("error"), for telemetry."""
+  meta = {} if meta is None else meta
   t = ui_text(language)
   try:
     llms = get_llm_from_user_key(user_key)
@@ -667,6 +672,7 @@ def run_pipeline(
           llm, image_data=images_arg, manual_ingredients=manual_arg,
           user_key=user_key,
       )
+    meta["model"] = llm.model
     try:
       crew_output = crew_builder.crew().kickoff(inputs=inputs)
       break
@@ -675,6 +681,7 @@ def run_pipeline(
         logging.warning(f"{llm.model} failed, trying the next model: {hide_key(err)}")
         continue
       logging.error(f"Pipeline failed: {hide_key(err)}")
+      meta["error"] = hide_key(err)
       return f"{t['msg_error']}\n\n```text\n{hide_key(err)}\n```", "", ""
 
   try:
@@ -686,6 +693,7 @@ def run_pipeline(
     return recipe_md, shopping_md, nutrition_md
   except Exception as err:
     logging.exception(f"Pipeline failed: {hide_key(err)}")
+    meta["error"] = hide_key(err)
     return f"{t['msg_error']}\n\n```text\n{hide_key(err)}\n```", "", ""
 
 
@@ -1234,18 +1242,25 @@ gradio-app { position: relative; z-index: 1; }
 }
 """.replace("__MOSAIC_URL__", ui_asset_url(MOSAIC_FILE))
 
-# Feedback values stored in the database, whatever the UI language.
-FEEDBACK_RATINGS = ["up", "down"]
+# feedback_rating values stored in app_analytics, whatever the UI language.
+FEEDBACK_RATINGS = [telemetry.AUTHENTIC, telemetry.HALLUCINATION]
 
 
-def run_pipeline_tracked(*args):
-  """run_pipeline for the UI: times the run, logs it in the background and
+def run_pipeline_tracked(
+    image_files, manual_text, selected_dish, user_cravings, dietary_selected,
+    dietary_custom, target_city, workflow_type, recipe_style, language, user_key,
+    request: gr.Request,
+):
+  """run_pipeline for the UI: times the run, saves it to app_analytics and
   returns its id, which the feedback form attaches to the user's rating."""
-  (image_files, manual_text, selected_dish, _cravings, _diet, _custom,
-   target_city, workflow_type, recipe_style, language, user_key) = args
   t = ui_text(language)
+  meta = {}
   start = time.time()
-  outputs = run_pipeline(*args)
+  outputs = run_pipeline(
+      image_files, manual_text, selected_dish, user_cravings, dietary_selected,
+      dietary_custom, target_city, workflow_type, recipe_style, language,
+      user_key, meta=meta,
+  )
   duration = time.time() - start
 
   recipe_md = outputs[0]
@@ -1262,29 +1277,33 @@ def run_pipeline_tracked(*args):
           ("heritage", bool(selected_dish) and selected_dish != AUTO_DETECT),
       ) if used
   ) or "none"
-  try:
-    key_source = key_provider(user_key) or "free_pool"
-  except ValueError:
-    key_source = "invalid"
+  profile = ", ".join(
+      list(dietary_selected or []) + [(dietary_custom or "").strip()]
+  ).strip(", ") or None
 
-  run_id = telemetry.new_run_id()
-  telemetry.log_run(
-      run_id, workflow_type, input_type,
+  log_id = telemetry.log_execution(
+      input_type,
       selected_dish if selected_dish != AUTO_DETECT else None,
-      recipe_style, target_city, LANGUAGES.get(language, "en"), key_source,
-      duration, status,
+      profile,
+      target_city,
+      meta.get("model"),
+      duration,
+      status,
+      meta.get("error"),
+      session_id=getattr(request, "session_hash", None),
   )
-  return (*outputs, run_id if status == "success" else None, gr.update(value=""))
+  return (*outputs, log_id if status == "success" else None, gr.update(value=""))
 
 
-def submit_feedback(run_id, rating, comment, language):
+def submit_feedback(log_id, rating, comment, language):
   t = ui_text(language)
-  if not run_id:
+  if not log_id:
     return t["fb_no_run"], gr.update()
   if rating not in FEEDBACK_RATINGS:
     return t["fb_no_rating"], gr.update()
-  telemetry.log_feedback(run_id, rating, comment)
-  # One rating per recipe: a new generation gives a new run id.
+  if not telemetry.save_feedback(log_id, rating, comment):
+    return t["fb_failed"], gr.update()
+  # One rating per recipe: a new generation gives a new log id.
   return t["fb_thanks"], None
 
 
@@ -1461,7 +1480,7 @@ with gr.Blocks(
           print_recipe_btn = gr.Button(
               T["print_recipe"], size="sm", elem_classes="ck-print-btn"
           )
-          run_id_state = gr.State(None)
+          log_id_state = gr.State(None)
           with gr.Accordion(T["fb_header"], open=False) as feedback_box:
             feedback_rating = gr.Radio(
                 choices=list(zip(T["fb_ratings"], FEEDBACK_RATINGS)),
@@ -1558,13 +1577,13 @@ with gr.Blocks(
           language_selector,
           user_key_input,
       ],
-      outputs=[recipe_box, shopping_box, analysis_box, run_id_state, feedback_status],
+      outputs=[recipe_box, shopping_box, analysis_box, log_id_state, feedback_status],
   )
 
   feedback_btn.click(
       fn=submit_feedback,
-      inputs=[run_id_state, feedback_rating, feedback_comment, language_selector],
-      outputs=[feedback_status, run_id_state],
+      inputs=[log_id_state, feedback_rating, feedback_comment, language_selector],
+      outputs=[feedback_status, log_id_state],
   )
 
 if __name__ == "__main__":
