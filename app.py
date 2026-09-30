@@ -906,6 +906,23 @@ PRINT_CSS = """
 """
 head += f"<style>{PRINT_CSS}</style>"
 
+# Touch scrolling inside the huggingface.co iframe on iOS Safari: Gradio sets
+# overflow hidden on .gradio-container, and a fixed background breaks scrolling
+# there. In <head> for the same reason as the print styles.
+MOBILE_SCROLL_CSS = """
+@media (max-width: 900px) {
+  html, html body, html body .gradio-container {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  html body { background-attachment: scroll !important; }
+}
+"""
+head += f"<style>{MOBILE_SCROLL_CSS}</style>"
+
 css = """
 :root {
   --ck-blue: #1e5f9e;        /* Sidi Bou Said blue */
