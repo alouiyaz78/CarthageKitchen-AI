@@ -738,6 +738,12 @@ theme = gr.themes.Soft(
     checkbox_background_color_selected="#1e5f9e",
 )
 
+# The styling assumes a light background: dark mode reuses the light values,
+# so no page reload with ?__theme=light is needed.
+for _name in list(vars(theme)):
+  if _name.endswith("_dark") and hasattr(theme, _name[:-5]):
+    setattr(theme, _name, getattr(theme, _name[:-5]))
+
 # Only the files listed here are served by Gradio, not the whole folder.
 UI_ASSETS_DIR = CURRENT_DIR / "assets" / "ui"
 MOSAIC_FILE = UI_ASSETS_DIR / "mosaique_Tunisienne.jpg"
@@ -843,18 +849,6 @@ def build_hero_html(language: str) -> str:
       f"<div class='ck-vignettes'>{vignettes}</div>"
       "</div><div class='ck-band'></div></div>"
   )
-
-
-# The styling assumes a light background, so force Gradio's light mode.
-force_light_js = """
-() => {
-  const url = new URL(window.location);
-  if (url.searchParams.get('__theme') !== 'light') {
-    url.searchParams.set('__theme', 'light');
-    window.location.replace(url.href);
-  }
-}
-"""
 
 
 def print_js(box_id: str) -> str:
@@ -1379,7 +1373,6 @@ with gr.Blocks(
     title="NourishBot — Carthage Kitchen ",
     theme=theme,
     css=css,
-    js=force_light_js,
     head=head,
 ) as demo:
   with gr.Column(elem_id="ck-header"):
