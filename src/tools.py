@@ -251,25 +251,70 @@ NEIGHBOR_CUISINE = re.compile(r"maroc|morocc|alg[ée]r", re.I)
 PREFERRED_CHANNELS = ("teyssir", "hendati")
 
 
+# Spellings of the same Tunisian dish name, as the dialect is written in
+# French. Tunisian spellings only: never add a Moroccan or Algerian name, since
+# a dish with the same name can be another dish there (tajine).
+TUNISIAN_SPELLINGS = (
+    ("nouasser", "nwasser", "nwacer", "nouacer"),
+    ("kafteji", "keftaji", "kaftaji", "keffteji"),
+    ("ojja", "ojjet"),
+    ("lablabi", "leblebi"),
+    ("mloukhia", "mloukhiya", "mlokhia"),
+    ("makrouna", "maqrouna"),
+    ("mhamsa", "mhamssa"),
+    ("bsissa", "bsisa"),
+    ("kammounia", "kamounia"),
+    ("masfouf", "mesfouf"),
+    ("brik", "brick"),
+    ("mechouia", "méchouia", "mechwia"),
+)
+MAX_NAMES = 4
+
+
+def with_tunisian_spellings(names: list[str]) -> list[str]:
+  """The names followed by their other Tunisian spellings, MAX_NAMES at most."""
+  out = list(names)
+  for name in names:
+    for spellings in TUNISIAN_SPELLINGS:
+      for word in spellings:
+        pattern = rf"\b{word}\b"
+        if re.search(pattern, name, re.I):
+          out += [re.sub(pattern, other, name, flags=re.I)
+                  for other in spellings if other != word]
+          break
+  unique = {}
+  for name in out:
+    unique.setdefault(name.lower(), name)
+  return list(unique.values())[:MAX_NAMES]
+
+
 # A result titled "riz aux calamars farcis" is another dish than "calmars
 # farcis": drop results whose title names a base the request does not.
 BASE_STARCHES = {
     "riz": ("riz", "rouz"),
     "couscous": ("couscous", "kousksi", "kouski", "kesksi"),
     "boulgour": ("boulgour", "borghol", "burghul", "bulgur"),
-    "pâtes": ("pâtes", "pates", "macaroni", "spaghetti", "nwasser", "rechta"),
+    "pâtes": ("pâtes", "pates", "macaroni", "spaghetti"),
+    "nwasser": TUNISIAN_SPELLINGS[0],
+    "rechta": ("rechta",),
     "frik": ("frik", "chorba", "soupe"),
     "mhamsa": ("mhamsa", "mhamssa"),
 }
 
 
+def starch_groups(text: str) -> set[str]:
+  text = text.lower()
+  return {
+      group for group, words in BASE_STARCHES.items()
+      if any(re.search(rf"\b{w}\b", text) for w in words)
+  }
+
+
 def names_other_dish(title: str, names: list[str]) -> bool:
-  title, wanted = title.lower(), " ".join(names).lower()
-  for words in BASE_STARCHES.values():
-    in_title = any(re.search(rf"\b{w}\b", title) for w in words)
-    if in_title and not any(re.search(rf"\b{w}\b", wanted) for w in words):
-      return True
-  return False
+  # "Pâtes nwasser" is still nwasser: a title that also names a requested
+  # base is kept.
+  in_title, wanted = starch_groups(title), starch_groups(" ".join(names))
+  return bool(in_title - wanted) and not in_title & wanted
 
 
 def split_dish_names(dish_names: str) -> list[str]:
@@ -373,11 +418,116 @@ def first_name(value) -> str:
   return clean_text(value)
 
 
-def fetch_written_recipe(url: str) -> dict | None:
-  """Read the schema.org Recipe of a page, if it has a complete one.
+def meta_content(page: str, key: str) -> str:
+  match = re.search(
+      rf'<meta[^>]+(?:property|name)=["\']{key}["\'][^>]+content=["\']([^"\']+)',
+      page,
+  )
+  return clean_text(match.group(1)) if match else ""
 
-  Pages rendered by JavaScript (such as Nessma Cuisine) have no Recipe data in
-  their HTML and are skipped.
+
+# Words that mark a Tunisian recipe in its title, cuisine or description.
+TUNISIAN_MARK = re.compile(r"tunis|tounsi|تونس", re.I)
+# A quantity in an ingredient line: "500 g d'agneau", "Nwasser - 500 g".
+QUANTITY = re.compile(r"[\d½¼¾]")
+
+
+def page_text(page: str) -> str:
+  """Readable text of a page, one line per list item, paragraph or heading,
+  without menus and scripts. Divs do not break lines: sites often split an
+  ingredient into quantity, unit and name divs inside one list item."""
+  page = re.sub(
+      r"<(script|style|noscript|header|footer|nav|aside|form)\b.*?</\1>",
+      " ", page, flags=re.S | re.I,
+  )
+  page = re.sub(r"</?(br|p|li|h\d|tr)\b[^>]*>", "\n", page, flags=re.I)
+  text = html.unescape(re.sub(r"<[^>]+>", " ", page))
+  lines = (re.sub(r"\s+", " ", line).strip() for line in text.split("\n"))
+  return "\n".join(line for line in lines if line)
+
+
+def normalize_quote(text: str) -> str:
+  text = text.lower().replace("\u2019", "'").replace("\u00a0", " ")
+  return re.sub(r"\s+", " ", re.sub(r"[^\w'/,.½¼¾ ]", " ", text)).strip()
+
+
+def ingredient_quoted(line: str, page_lines: list[str]) -> bool:
+  """True if the ingredient is copied from a single line of the page, so a
+  quantity cannot be moved from one ingredient to the next."""
+  line = normalize_quote(line)
+  return bool(line) and any(line in page_line for page_line in page_lines)
+
+
+def step_quoted(line: str, source: str, source_words: set[str]) -> bool:
+  """True if the step is copied from the page. It may differ by a word or two
+  (the model fixes a typo, drops an emoji), so 90% of its words are enough."""
+  line = normalize_quote(line)
+  if not line:
+    return False
+  if line in source:
+    return True
+  words = [w for w in line.split() if len(w) > 3]
+  return len(words) >= 6 and sum(w in source_words for w in words) >= 0.9 * len(words)
+
+
+EXTRACT_PROMPT = """The text below is a recipe web page. Copy the recipe out of it as JSON:
+{{"title": "...", "author": "person named as the author, or empty", "servings": "...",
+"ingredients": ["one line per ingredient, with its quantity"], "steps": ["one line per step"]}}
+Copy every ingredient line and every step word for word from the text: do not translate,
+reword, complete or add anything. Keep the quantity written next to each ingredient.
+If the page has no complete recipe, answer {{"ingredients": [], "steps": []}}.
+
+PAGE TEXT:
+{text}"""
+
+
+def extract_recipe_from_text(page: str, llm) -> dict | None:
+  """Ingredients and steps copied from the page text by the crew's LLM.
+
+  Only lines found in the page text are kept, and the recipe is dropped if
+  the model rewrote more than a quarter of it: nothing it adds can reach the
+  card.
+  """
+  text = page_text(page)
+  start = text.lower().find("ingr")
+  if start < 0:
+    return None
+  text = text[max(0, start - 1500):start + 10000]
+  try:
+    answer = str(llm.call([{"role": "user", "content": EXTRACT_PROMPT.format(text=text)}]))
+    data = json.loads(re.search(r"\{.*\}", answer, re.S).group(0))
+  except Exception as e:
+    logging.warning(f"Recipe extraction failed: {e}")
+    return None
+  page_lines = [normalize_quote(line) for line in text.split("\n")]
+  source = " ".join(page_lines)
+  source_words = set(source.split())
+  checks = {
+      "ingredients": lambda x: ingredient_quoted(x, page_lines),
+      "steps": lambda x: step_quoted(x, source, source_words),
+  }
+  checked = {}
+  for key, is_quoted in checks.items():
+    lines = [clean_text(x) for x in data.get(key) or [] if clean_text(x)]
+    kept = [x for x in lines if is_quoted(x)]
+    if not lines or len(kept) < 0.75 * len(lines):
+      return None
+    checked[key] = kept
+  return {
+      "title": clean_text(data.get("title")),
+      "author": clean_text(data.get("author")),
+      "servings": clean_text(data.get("servings")),
+      **checked,
+  }
+
+
+def fetch_written_recipe(url: str, llm=None) -> dict | None:
+  """Read the recipe of a page, if it has a complete one.
+
+  The schema.org Recipe data is used first. A Tunisian site without it, or
+  whose data has no quantities, is read from the page text by the LLM, with
+  every line checked against the page. Pages rendered by JavaScript (such as
+  Nessma Cuisine) have no recipe in their HTML and are skipped.
   """
   try:
     resp = requests.get(url, headers=BROWSER_HEADERS, timeout=8)
@@ -385,15 +535,18 @@ def fetch_written_recipe(url: str) -> dict | None:
   except requests.RequestException:
     return None
   page = resp.text
-  site = re.search(
-      r'<meta[^>]+property=["\']og:site_name["\'][^>]+content=["\']([^"\']+)',
-      page,
-  )
+  site = meta_content(page, "og:site_name") or domain(url)
+  page_title = meta_content(page, "og:title")
+  # A page about the Moroccan or Algerian dish of the same name is another dish.
+  if NEIGHBOR_CUISINE.search(page_title + " " + meta_content(page, "description")):
+    return None
+  recipe = None
   for block in re.findall(
       r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", page, re.S
   ):
     try:
-      data = json.loads(block.strip())
+      # strict=False: some sites leave raw line breaks inside strings.
+      data = json.loads(block.strip(), strict=False)
     except ValueError:
       continue
     for node in find_recipe_nodes(data):
@@ -401,23 +554,54 @@ def fetch_written_recipe(url: str) -> dict | None:
           clean_text(i) for i in node.get("recipeIngredient") or [] if i
       ]
       steps = recipe_steps(node.get("recipeInstructions"))
-      if len(ingredients) >= 3 and len(steps) >= 2:
-        author = node.get("author")
-        if isinstance(author, list):
-          author = author[0] if author else None
-        return {
-            "title": clean_text(node.get("name")),
-            "author": first_name(author),
-            "author_is_org": isinstance(author, dict)
-            and author.get("@type") == "Organization",
-            "site": clean_text(site.group(1)) if site else domain(url),
-            "servings": first_name(node.get("recipeYield")),
-            "ingredients": ingredients,
-            "steps": steps,
-            # Drop the tracking parameter Google adds to result links.
-            "url": re.sub(r"[?&]srsltid=[^&]*$", "", url),
-        }
-  return None
+      if len(ingredients) < 3 or len(steps) < 2:
+        continue
+      about = " ".join(
+          clean_text(node.get(k)) for k in ("name", "recipeCuisine", "description", "keywords")
+      )
+      if NEIGHBOR_CUISINE.search(about):
+        return None
+      author = node.get("author")
+      if isinstance(author, list):
+        author = author[0] if author else None
+      recipe = {
+          "title": clean_text(node.get("name")),
+          "author": first_name(author),
+          "author_is_org": isinstance(author, dict)
+          and author.get("@type") == "Organization",
+          "servings": first_name(node.get("recipeYield")),
+          "ingredients": ingredients,
+          "steps": steps,
+          "tunisian_mark": bool(TUNISIAN_MARK.search(about + " " + page_title)),
+      }
+      break
+    if recipe:
+      break
+  quantified = recipe and sum(
+      bool(QUANTITY.search(i)) for i in recipe["ingredients"]
+  ) >= len(recipe["ingredients"]) / 2
+  if not quantified and llm is not None and is_tunisian_site(url):
+    text_recipe = extract_recipe_from_text(page, llm)
+    if text_recipe and len(text_recipe["ingredients"]) >= 3 and len(text_recipe["steps"]) >= 2:
+      recipe = {
+          "author": "",
+          "author_is_org": False,
+          "servings": "",
+          "tunisian_mark": True,
+          **(recipe or {}),
+          **{k: v for k, v in text_recipe.items() if v},
+      }
+  # The card needs quantities (the nutrition is computed from them): a recipe
+  # without them would make the model guess.
+  if not recipe or sum(
+      bool(QUANTITY.search(i)) for i in recipe["ingredients"]
+  ) < len(recipe["ingredients"]) / 2:
+    return None
+  recipe["title"] = recipe.get("title") or page_title
+  recipe["site"] = site
+  # Drop the tracking parameter Google adds to result links.
+  recipe["url"] = re.sub(r"[?&]srsltid=[^&]*$", "", url)
+  return recipe
 
 
 def domain(url: str) -> str:
@@ -436,7 +620,7 @@ def matches(value: str, keys: tuple[str, ...]) -> bool:
 # names: a first name such as "Samar" or "Olfa" alone is too common.
 TUNISIAN_SITES = (
     "teyssir", "ksouri", "hendati", "mesinspirationsculinaires",
-    "cuisineolfa", "madamejerbi",
+    "cuisineolfa", "madamejerbi", "bennasafi.",
 )
 TUNISIAN_CHEFS = (
     "teyssir", "ksouri", "hendati", "wafikbelhadj", "rafiktlatli",
@@ -469,6 +653,11 @@ SOURCE_LABELS = {
 }
 
 
+def is_tunisian_site(url: str) -> bool:
+  site = domain(url)
+  return site.endswith(".tn") or matches(site, TUNISIAN_SITES)
+
+
 def source_rank(recipe: dict) -> int:
   site, author = domain(recipe["url"]), recipe["author"]
   if matches(site, FOOD_BRANDS) or recipe["author_is_org"]:
@@ -477,14 +666,13 @@ def source_rank(recipe: dict) -> int:
     return PORTAL
   if site.endswith((".dz", ".ma")):
     return PORTAL
-  if matches(site, TUNISIAN_SITES) or matches(author, TUNISIAN_CHEFS):
-    return TUNISIAN
-  if site.endswith(".tn"):
+  if is_tunisian_site(recipe["url"]) or matches(author, TUNISIAN_CHEFS):
     return TUNISIAN
   if matches(site, FOOD_PORTALS) or not author:
     return PORTAL
-  # A named person on a site we do not know: most often a personal blog.
-  return AUTHOR
+  # A named person on a site we do not know, most often a personal blog. It
+  # only counts if the recipe says it is Tunisian.
+  return AUTHOR if recipe.get("tunisian_mark") else PORTAL
 
 
 def source_credit(recipe: dict) -> str:
@@ -524,16 +712,30 @@ def format_written_recipe(recipe: dict) -> str:
   )
 
 
-def search_written_recipes(names: list[str]) -> list[dict]:
+MAX_TEXT_READS = 2
+
+
+def search_written_recipes(names: list[str], llm=None) -> list[dict]:
   """The best complete written Tunisian recipe for the dish, if any.
 
-  Only pages that publish schema.org Recipe data are kept, so the result has
-  a real ingredient list and real steps, not a guess from page text. Only
+  Only pages with schema.org Recipe data, or Tunisian sites whose text the
+  LLM copies out line by line (see fetch_written_recipe), are kept, so the
+  result has a real ingredient list and real steps. Only
   Tunisian chefs and sites or independent authors count as a chef's recipe:
   when the search finds nothing but food portals or brands, the list is
   empty and the model falls back to a Tunisian chef's video.
   """
-  recipes, seen = [], set()
+  def keep(r):
+    return (
+        r and not NEIGHBOR_CUISINE.search(r["title"])
+        and not names_other_dish(r["title"], names)
+        and source_rank(r) <= AUTHOR
+    )
+
+  def has_tunisian():
+    return any(source_rank(r) == TUNISIAN for r in recipes)
+
+  recipes, seen, unread = [], set(), []
   for name in names:
     urls = []
     for r in serper_search(f"{name} recette tunisienne"):
@@ -544,16 +746,22 @@ def search_written_recipes(names: list[str]) -> list[dict]:
         continue
       seen.add(url)
       urls.append(url)
+    urls = urls[:8]
     with ThreadPoolExecutor(max_workers=8) as pool:
-      found = pool.map(fetch_written_recipe, urls[:8])
-    recipes += [
-        r for r in found
-        if r and not NEIGHBOR_CUISINE.search(r["title"])
-        and not names_other_dish(r["title"], names)
-        and source_rank(r) <= AUTHOR
-    ]
-    if any(source_rank(r) == TUNISIAN for r in recipes):
+      found = list(pool.map(fetch_written_recipe, urls))
+    recipes += [r for r in found if keep(r)]
+    unread += [u for u, r in zip(urls, found) if r is None and is_tunisian_site(u)]
+    if has_tunisian():
       break
+  # Tunisian pages without usable Recipe data are read by the LLM only when
+  # no Tunisian recipe was found, one page at a time: the free Groq tier
+  # allows 8000 tokens a minute.
+  if llm is not None and not has_tunisian():
+    for url in unread[:MAX_TEXT_READS]:
+      r = fetch_written_recipe(url, llm)
+      if keep(r):
+        recipes.append(r)
+        break
   # Python's sort is stable, so search order is kept among equals.
   recipes.sort(key=source_rank)
   return recipes[:1]
@@ -577,16 +785,25 @@ def search_videos(names: list[str]) -> list[dict]:
         continue
       seen.add(url)
       videos.append({"url": url, "title": title})
-    if len(videos) >= 3:
+    # Enough candidates to find a Tunisian chef among them after ranking.
+    if len(videos) >= 8:
       break
-  with ThreadPoolExecutor(max_workers=6) as pool:
-    channels = list(pool.map(youtube_channel, [v["url"] for v in videos]))
+  with ThreadPoolExecutor(max_workers=8) as pool:
+    channels = list(pool.map(youtube_channel, [v["url"] for v in videos[:8]]))
   # Videos that oEmbed cannot resolve are private or removed: skip them.
   resolved = [{**v, "channel": c} for v, c in zip(videos, channels) if c]
-  resolved.sort(
-      key=lambda v: not any(p in v["channel"].lower() for p in PREFERRED_CHANNELS)
-  )
+  resolved.sort(key=video_rank)
   return resolved[:3]
+
+
+def video_rank(video: dict) -> int:
+  """Preferred chefs first, then other Tunisian chefs and Tunisian channels."""
+  channel = video["channel"]
+  if matches(channel, PREFERRED_CHANNELS):
+    return 0
+  if matches(channel, TUNISIAN_CHEFS) or TUNISIAN_MARK.search(channel):
+    return 1
+  return 2
 
 
 class ChefSearchTool(BaseTool):
@@ -604,15 +821,29 @@ class ChefSearchTool(BaseTool):
       " ingredients, steps) and up to 3 YouTube videos (title, channel, URL)."
   )
   args_schema: type[BaseModel] = DishNamesInput
+  # The crew's LLM, to read Tunisian recipe pages that have no Recipe data.
+  _llm = PrivateAttr(default=None)
+  # What the search found, so the app writes the source line from real data.
+  _found = PrivateAttr(default=None)
+
+  def __init__(self, llm=None, **kwargs):
+    super().__init__(**kwargs)
+    self._llm = llm
+
+  @property
+  def found(self) -> dict | None:
+    """{"recipe": dict or None, "videos": [...]}, or None before any search."""
+    return self._found
 
   def _run(self, dish_names: str) -> str:
     if not os.getenv("SERPER_API_KEY"):
       return "Error: SERPER_API_KEY is missing."
-    names = split_dish_names(dish_names)
+    names = with_tunisian_spellings(split_dish_names(dish_names))
     with ThreadPoolExecutor(max_workers=2) as pool:
-      recipes = pool.submit(search_written_recipes, names)
+      recipes = pool.submit(search_written_recipes, names, self._llm)
       videos = pool.submit(search_videos, names)
       recipes, videos = recipes.result(), videos.result()
+    self._found = {"recipe": recipes[0] if recipes else None, "videos": videos}
     parts = ["WRITTEN RECIPES:"]
     parts += [format_written_recipe(r) for r in recipes] or ["none found."]
     parts.append("\nVIDEOS:")

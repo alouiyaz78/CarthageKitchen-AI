@@ -22,7 +22,7 @@ from src.crew import (
 from src.dish_categories import CATEGORIES, dish_category
 from src.nutrition import nutrition_report
 from src import telemetry
-from src.tools import get_recipe_by_name
+from src.tools import get_recipe_by_name, source_credit
 
 CURRENT_DIR = Path(__file__).resolve().parent
 ENV_FILE = CURRENT_DIR / ".env"
@@ -122,6 +122,10 @@ UI_TEXT = {
         "msg_web_unavailable": (
             "*Web search is not configured (SERPER_API_KEY missing), so this"
             " is the classic heritage recipe.*"
+        ),
+        "msg_no_chef_recipe": (
+            "*No written recipe by a Tunisian chef or Tunisian site was found"
+            " for this dish, so the card follows the heritage recipe.*"
         ),
         "cravings_label": "Cravings or variations (optional)",
         "cravings_placeholder": "e.g. fish dish, spicy, family-style...",
@@ -307,6 +311,10 @@ UI_TEXT = {
         "msg_web_unavailable": (
             "*La recherche web n'est pas configurée (SERPER_API_KEY absente) :"
             " voici la recette patrimoniale classique.*"
+        ),
+        "msg_no_chef_recipe": (
+            "*Aucune recette écrite d'un chef ou d'un site tunisien n'a été"
+            " trouvée pour ce plat : la fiche suit la recette patrimoniale.*"
         ),
         "cravings_label": "Envies ou variantes (optionnel)",
         "cravings_placeholder": "Ex : plat au poisson, bien piquant, familial...",
@@ -515,46 +523,79 @@ def drop_preamble(text: str) -> str:
   return text[match.start():] if match else text
 
 
-# The chef writes external sources as "VIDEO: channel | title | url" (or
-# CHEF: for a written recipe) and the sentence is built here, in the UI
-# language. Titles may contain "|", so the name is the first field and the
-# URL the last.
-SOURCE_LINE = re.compile(
-    r"(?m)^\W*(VIDEO|CHEF)[*_\s]*:[*_\s]*(.+?)\s*\|\s*(.+)\s*\|\s*<?(https?://[^\s>]+?)>?[*_.,;]*\s*$"
-)
+# In the web styles the chef ends the card with "SOURCE: CHEF" (the card
+# follows the written recipe found by the tool) or "SOURCE: VIDEO" (heritage
+# recipe, with a video to watch). The app removes that line and writes the
+# credit itself from the tool results, so the name and URL are always real.
+# The pattern also catches the older "CHEF: name | title | url" lines and
+# variants such as "**VIDEO** | ...".
+SOURCE_MARKER = re.compile(r"(?m)^\W*(?:SOURCE\W*)?(CHEF|VIDEO)\b.*\n?")
 
 
-def render_source_lines(text: str, t: dict) -> str:
-  def render(match):
-    kind, name, title, url = match.groups()
-    title = title.strip().replace("[", "(").replace("]", ")")
-    key = "video_variant" if kind == "VIDEO" else "chef_variant"
-    line = t[key].format(name=name.strip(), title=title, url=url.rstrip(".,;"))
-    # Blank lines keep it out of a preceding list and its own paragraph.
-    return f"\n{line}\n"
+def resolve_source(text: str, found: dict | None) -> tuple[str, str | None, tuple | None]:
+  """Remove the chef's source marker and return (text, kind, source line).
 
-  return SOURCE_LINE.sub(render, text)
+  kind is "CHEF" only if the chef says it followed the written recipe and the
+  tool really found one; otherwise "VIDEO" if the tool found a video, or None.
+  """
+  kinds = {m.group(1) for m in SOURCE_MARKER.finditer(text)}
+  text = SOURCE_MARKER.sub("", text).rstrip()
+  found = found or {}
+  recipe, videos = found.get("recipe"), found.get("videos") or []
+  if "CHEF" in kinds and recipe:
+    return text, "CHEF", recipe_source_line(recipe)
+  if videos:
+    return text, "VIDEO", video_source_line(videos[0])
+  return text, None, None
 
 
-def recipe_heading(text: str, t: dict, recipe_style: str) -> str:
-  """The recipe tab title, from the style and the source line the chef wrote.
+def recipe_source_line(recipe: dict) -> tuple[str, str, str, str]:
+  return ("chef_variant", source_credit(recipe), recipe["title"], recipe["url"])
 
-  The heritage title is reserved for the classic style. In chefs_variants a
-  VIDEO line means the heritage recipe with a video to watch; anything else,
-  including a missing or malformed CHEF line, gets the contemporary title.
+
+def video_source_line(video: dict) -> tuple[str, str, str, str]:
+  return ("video_variant", video["channel"], video["title"], video["url"])
+
+
+def render_source_line(source: tuple, t: dict) -> str:
+  key, name, title, url = source
+  title = title.replace("[", "(").replace("]", ")")
+  return t[key].format(name=name, title=title, url=url)
+
+
+def recipe_heading(kind: str | None, t: dict, recipe_style: str) -> str:
+  """The recipe tab title, from the style and the source actually used.
+
+  The heritage title is used in the classic style, and in chefs_variants when
+  nothing by a Tunisian chef was found.
   """
   if recipe_style == COMPARISON_STYLE:
     return t["head_recipe_comparison"]
   if recipe_style == CLASSIC_STYLE:
     return t["head_recipe"]
-  kinds = {m.group(1) for m in SOURCE_LINE.finditer(text)}
-  if "VIDEO" in kinds and "CHEF" not in kinds:
-    return t["head_recipe_video"]
-  return t["head_recipe_chef"]
+  return {"CHEF": t["head_recipe_chef"], "VIDEO": t["head_recipe_video"]}.get(
+      kind, t["head_recipe"]
+  )
+
+
+def recipe_card(recipe: str, t: dict, recipe_style: str, found: dict | None) -> str:
+  """The recipe tab: title, notice when no chef recipe was used, card, source."""
+  if recipe_style == CLASSIC_STYLE:
+    return f"## {t['head_recipe']}\n\n{recipe}"
+  recipe, kind, source = resolve_source(recipe, found)
+  parts = [f"## {recipe_heading(kind, t, recipe_style)}"]
+  # Comparison writes its own statement ("Complément vidéo") in that case.
+  if kind != "CHEF" and recipe_style != COMPARISON_STYLE:
+    parts.append(t["msg_no_chef_recipe"])
+  parts.append(recipe)
+  if source:
+    parts.append(render_source_line(source, t))
+  return "\n\n".join(parts)
 
 
 def dispatch_outputs_to_tabs(
-    crew_output, t: dict, recipe_style: str, dietary_restrictions: str = "None"
+    crew_output, t: dict, recipe_style: str, dietary_restrictions: str = "None",
+    chef_found: dict | None = None,
 ):
   """Split the crew output into the recipe, shopping and nutrition tabs.
 
@@ -576,11 +617,11 @@ def dispatch_outputs_to_tabs(
 
   if RECIPE_TASK not in outputs:
     raw = getattr(crew_output, "raw", "") or t["msg_no_output"]
-    return f"## {recipe_heading(raw, t, recipe_style)}\n\n{raw}", "", ""
+    return recipe_card(raw, t, recipe_style, chef_found), "", ""
 
   recipe = drop_preamble(outputs[RECIPE_TASK])
   return (
-      f"## {recipe_heading(recipe, t, recipe_style)}\n\n{render_source_lines(recipe, t)}",
+      recipe_card(recipe, t, recipe_style, chef_found),
       f"## {t['head_shopping']}\n\n{outputs.get(SOURCING_TASK, '')}",
       f"## {t['head_nutrition']}\n\n{nutrition_report(recipe, t, dietary_restrictions)}",
   )
@@ -685,8 +726,10 @@ def run_pipeline(
       return f"{t['msg_error']}\n\n```text\n{hide_key(err)}\n```", "", ""
 
   try:
+    chef_tool = getattr(crew_builder, "chef_tool", None)
     recipe_md, shopping_md, nutrition_md = dispatch_outputs_to_tabs(
         crew_output, t, recipe_style, dietary_restrictions,
+        chef_found=chef_tool.found if chef_tool else None,
     )
     if web_fallback and workflow_type == "recipe":
       recipe_md = f"{t['msg_web_unavailable']}\n\n{recipe_md}"

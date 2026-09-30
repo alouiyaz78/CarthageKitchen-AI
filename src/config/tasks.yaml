@@ -53,7 +53,8 @@ suggest_heritage_recipe_task:
     "Kalmars Mihchi", "Gnaoüiya", "Marquit Jilbana"). Never pass a rare spelling as is. First work out the names
     people use today: the plain French name (e.g., "calmars farcis", "ragoût de gombos") and one or two common
     Tunisian spellings (e.g., "kalamar mahchi", "gnaouia"). Keep every word that makes it a different dish,
-    such as couscous, riz or tajine. Pass them comma-separated, French name first.
+    such as couscous, riz or tajine. Pass them comma-separated, French name first. Use Tunisian names only,
+    never the Moroccan or Algerian name of a dish: a dish with the same name can be another dish there.
     The tool returns WRITTEN RECIPES and VIDEOS. Decide in this exact order:
 
     1. Written recipe first. The tool returns at most one, always by a qualified Tunisian author/chef.
@@ -61,26 +62,30 @@ suggest_heritage_recipe_task:
     If it qualifies:
     - In "chefs_variants": it replaces the heritage reference as the source of the card (its ingredients, quantities, steps).
       Add a second sentence in the introduction explaining what characterizes this version (spices, technique) based strictly on its text.
-      End with: CHEF: <Credit> | <Title> | <URL>
+      Keep its own quantities, written first on each bullet (e.g., "Nwasser - 500 g" becomes "- 500 g de nwasser"). Never add
+      a quantity it does not give: such an ingredient stays without one (e.g., "- sel et poivre noir").
+      End with the line: SOURCE: CHEF
     - In "comparison": provide the heritage recipe steps, then add a section "Ce que change le chef" comparing verifiable differences
-      (spices, quantities, cooking vessel) visible in both texts. End with: CHEF: <Credit> | <Title> | <URL>
+      (spices, quantities, cooking vessel) visible in both texts. End with the line: SOURCE: CHEF
 
     2. Video fallback (only if no written recipe qualifies):
     Do not guess or hallucinate ingredients or techniques not present in the reference recipe.
-    - In "chefs_variants": present the heritage recipe method accurately, followed by the VIDEO line.
+    - In "chefs_variants": present the heritage recipe method accurately, then end with the line: SOURCE: VIDEO
     - In "comparison": present the heritage recipe. Add a section titled "Complément vidéo" stating plainly:
       "Aucune recette écrite alternative n'étant documentée pour ce plat, la méthode patrimoniale fait foi. La vidéo ci-dessous permet d'observer la gestuelle et le dressage du chef en cuisine."
-      Followed immediately by: VIDEO: <Channel> | <Title> | <URL>
+      Then end with the line: SOURCE: VIDEO
 
-    3. If nothing qualifies, write the heritage recipe without disclaimer or external links.
-    Never write both a CHEF and a VIDEO line. Line 1 MUST be the dish name as a markdown heading.
+    3. If the tool found neither a qualifying written recipe nor a video, write the heritage recipe with no SOURCE line.
+    Write at most one SOURCE line. Never write the source's URL, channel or chef name yourself: the app adds the credit
+    from the tool results. Line 1 MUST be the dish name as a markdown heading.
     Give the number of servings as a number (e.g., "4 portions"), and list the ingredients as bullets, one
     ingredient per bullet, each starting with its quantity in g, kg, ml, dl, c. à soupe, c. à café or a count
     (e.g., "- 500 g d'agneau", "- 2 c. à soupe de concentré de tomate", "- 3 oignons"). The nutrition values are
     computed from these quantities.
   expected_output: >
     A compact recipe card of 350 words at most: dish name as heading, context sentence, servings and times,
-    ingredients, numbered steps, up to 2 tips. Ends with a CHEF line (if written recipe) or VIDEO line (if fallback).
+    ingredients, numbered steps, up to 2 tips. In the chef styles, ends with SOURCE: CHEF (the card follows the written
+    chef recipe) or SOURCE: VIDEO (heritage recipe with a video).
     In comparison style, includes either "Ce que change le chef" (real differences) or "Complément vidéo" (visual reference).
   agent: recipe_suggestion_agent
 

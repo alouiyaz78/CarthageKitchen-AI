@@ -176,10 +176,10 @@ def make_task(name: str, agent: Agent, context=None) -> Task:
   return Task(config=TASKS_CONFIG[name], name=name, agent=agent, **kwargs)
 
 
-def web_search_tool() -> ChefSearchTool:
-  # A fresh tool per crew, since the usage count lives on the instance. The
-  # tool runs all its queries itself, so one call is enough.
-  return ChefSearchTool(max_usage_count=1)
+def web_search_tool(llm: LLM) -> ChefSearchTool:
+  # A fresh tool per crew, since the usage count and the results live on the
+  # instance. The tool runs all its queries itself, so one call is enough.
+  return ChefSearchTool(llm=llm, max_usage_count=1)
 
 
 class NourishBotRecipeCrew:
@@ -193,6 +193,9 @@ class NourishBotRecipeCrew:
     self.manual_ingredients = manual_ingredients
     self.recipe_style = recipe_style
     self.user_key = user_key
+    # Set by crew() in the web styles; app.py reads chef_tool.found after the
+    # run to write the source line.
+    self.chef_tool = None
 
   def crew(self) -> Crew:
     agents = []
@@ -216,9 +219,10 @@ class NourishBotRecipeCrew:
 
     # Classic mode keeps the chef on the Neon RAG tool only, for speed.
     use_web = self.recipe_style != CLASSIC_STYLE and WEB_SEARCH_AVAILABLE
+    self.chef_tool = web_search_tool(self.llm) if use_web else None
     chef = make_agent(
         "recipe_suggestion_agent", self.llm,
-        extra_tools=[web_search_tool()] if use_web else [],
+        extra_tools=[self.chef_tool] if use_web else [],
     )
     sourcer = make_agent("ingredient_sourcing_agent", self.llm)
 

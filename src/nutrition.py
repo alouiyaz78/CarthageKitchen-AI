@@ -74,7 +74,7 @@ FOODS = [
     Food("bread", r"\bpain\b|\bbread\b|baguette|tabouna|mlaoui", 265, 9, 3.2, 49, 2.7, 490),
     Food("semolina", r"semoule|couscous|semolina|mhamsa|boulgour|borghol|bulgur", 360, 12.5, 1.5, 73, 4, 10, density=0.7),
     Food("rice", r"\briz\b|\brice\b", 360, 6.6, 0.6, 80, 1.3, 5, density=0.85),
-    Food("pasta", r"pates|vermicelles?|langues? d'oiseau|nouasser|hlalem|pasta|noodles|spaghetti|orzo",
+    Food("pasta", r"pates|vermicelles?|langues? d'oiseau|nouasser|nwasser|nwacer|nouacer|hlalem|pasta|noodles|spaghetti|orzo",
          360, 12.5, 1.5, 72, 3, 6, density=0.6),
     Food("flour", r"farine|\bflour\b", 364, 10, 1, 76, 2.7, 2, density=0.55),
     Food("potato", r"pommes? de terre|potato(?:es)?", 77, 2, 0.1, 17.5, 2.2, 6, piece=150),
@@ -165,6 +165,14 @@ UNITS = [
     (r"(?:tranches?|slices?)\b", "g", 30),
 ]
 _UNIT_RES = [(re.compile(p), kind, factor) for p, kind, factor in UNITS]
+# Meat cuts counted as pieces: "4 cuisses de poulet" is not 4 whole chickens.
+MEAT_CUTS = [
+    (re.compile(r"\b(?:cuisses?|pilons?|drumsticks?|legs?)\b"), 200),
+    (re.compile(r"\b(?:blancs?|filets?|escalopes?|breasts?)\b"), 150),
+    (re.compile(r"\b(?:ailes?|wings?)\b"), 90),
+    (re.compile(r"\b(?:morceaux?|pieces?)\b"), 150),
+]
+MEATS = {"lamb", "veal", "beef", "chicken", "meat"}
 FRYING = re.compile(r"friture|pour frire|frying|deep.?fry|to fry")
 TO_TASTE = re.compile(r"au gout|to taste|selon|facultatif|optional|a volonte")
 FRACTIONS = {"½": " 1/2", "¼": " 1/4", "¾": " 3/4", "⅓": " 1/3", "⅔": " 2/3"}
@@ -214,6 +222,10 @@ def quantity_grams(text: str, food: Food) -> float | None:
         return grams * food.density if kind == "ml" else grams
     if count is None:
       count = value
+  if count is not None and food.name in MEATS:
+    for pattern, grams in MEAT_CUTS:
+      if pattern.search(text):
+        return count * grams
   if count is not None and food.piece:
     return count * food.piece
   return None
